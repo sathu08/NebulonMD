@@ -1,0 +1,50 @@
+{
+  "metrics": {
+    "questions": 2,
+    "tool_selection_accuracy": 0.5,
+    "retrieval_accuracy": 1.0,
+    "answer_correctness": 0.5,
+    "hallucination_rate": 0.0,
+    "avg_latency_ms": 9669.65,
+    "max_latency_ms": 15331.7,
+    "avg_tokens": 51.0
+  },
+  "results": [
+    {
+      "id": "q1",
+      "question": "What is my name?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "Sathya",
+      "expected_memory": "Sathya",
+      "actual_tools": [
+        "recall"
+      ],
+      "retrieval_ok": true,
+      "tool_ok": true,
+      "answer": "Your name is Sathya. This is the name stored in your memory.",
+      "answer_ok": true,
+      "declines_answer": false,
+      "latency_ms": 15331.7,
+      "tokens": 58,
+      "error": null
+    },
+    {
+      "id": "q2",
+      "question": "What project am I building?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "NebulonMind",
+      "expected_memory": "NebulonMind",
+      "actual_tools": [],
+      "retrieval_ok": true,
+      "tool_ok": false,
+      "answer": "I don't have any record of what project you're building. This is our first interaction, and there's no stored memory about it. If you'd like to tell me about your project, I'll remember it for our future conversations.",
+      "answer_ok": false,
+      "declines_answer": false,
+      "latency_ms": 4007.59,
+      "tokens": 44,
+      "error": null
+    }
+  ]
+}

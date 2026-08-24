@@ -1,0 +1,78 @@
+{
+  "name": "memory_test_v1",
+  "description": "NebulonMind agent benchmark: retrieval accuracy, tool selection, answer correctness and hallucination behaviour. Each item carries a 'seed' text stored into the user's memory before evaluation (deduplicated), an 'expected_memory' used to score retrieval, and an 'expected_answer' used to score the final answer.",
+  "items": [
+    {
+      "id": "q1",
+      "type": "known",
+      "question": "What is my name?",
+      "seed": "My name is Sathya.",
+      "expected_memory": "Sathya",
+      "expected_tool": "recall",
+      "expected_answer": "Sathya"
+    },
+    {
+      "id": "q2",
+      "type": "known",
+      "question": "What project am I building?",
+      "seed": "I am building NebulonMind, the memory layer for NebulonDB.",
+      "expected_memory": "NebulonMind",
+      "expected_tool": "recall",
+      "expected_answer": "NebulonMind"
+    },
+    {
+      "id": "q3",
+      "type": "known",
+      "question": "What database does NebulonMind use?",
+      "seed": "NebulonMind persists memories through the NebulonDB database.",
+      "expected_memory": "NebulonDB",
+      "expected_tool": "recall",
+      "expected_answer": "NebulonDB"
+    },
+    {
+      "id": "q4",
+      "type": "known",
+      "question": "What programming language do I use?",
+      "seed": "I write my projects in Python.",
+      "expected_memory": "Python",
+      "expected_tool": "recall",
+      "expected_answer": "Python"
+    },
+    {
+      "id": "q5",
+      "type": "known",
+      "question": "Hello!",
+      "seed": "",
+      "expected_memory": "",
+      "expected_tool": "none",
+      "expected_answer": ""
+    },
+    {
+      "id": "q6",
+      "type": "known",
+      "question": "What is Python?",
+      "seed": "",
+      "expected_memory": "",
+      "expected_tool": "none",
+      "expected_answer": ""
+    },
+    {
+      "id": "q7",
+      "type": "unknown",
+      "question": "Do I know Rust?",
+      "seed": "",
+      "expected_memory": "",
+      "expected_tool": "recall",
+      "expected_answer": ""
+    },
+    {
+      "id": "q8",
+      "type": "unknown",
+      "question": "What is my favorite programming language?",
+      "seed": "",
+      "expected_memory": "",
+      "expected_tool": "recall",
+      "expected_answer": ""
+    }
+  ]
+}

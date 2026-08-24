@@ -1,0 +1,50 @@
+{
+  "metrics": {
+    "questions": 2,
+    "tool_selection_accuracy": 0.5,
+    "retrieval_accuracy": 1.0,
+    "answer_correctness": 0.5,
+    "hallucination_rate": 0.0,
+    "avg_latency_ms": 19059.17,
+    "max_latency_ms": 31005.98,
+    "avg_tokens": 65.0
+  },
+  "results": [
+    {
+      "id": "q1",
+      "question": "What is my name?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "Sathya",
+      "expected_memory": "Sathya",
+      "actual_tools": [
+        "recall"
+      ],
+      "retrieval_ok": true,
+      "tool_ok": true,
+      "answer": "Based on your stored memory, your name is **Sathya**. This was recorded as a factual detail with high confidence (importance 0.90, confidence 1.00). If this differs from how you'd like to be identified, just let me know and I'll update it.",
+      "answer_ok": true,
+      "declines_answer": false,
+      "latency_ms": 31005.98,
+      "tokens": 89,
+      "error": null
+    },
+    {
+      "id": "q2",
+      "question": "What project am I building?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "NebulonMind",
+      "expected_memory": "NebulonMind",
+      "actual_tools": [],
+      "retrieval_ok": true,
+      "tool_ok": false,
+      "answer": "I don't have any record of you mentioning a project so far. Could you tell me what you're building? I'm happy to help you track it, remember the details, or assist with whatever you need.",
+      "answer_ok": false,
+      "declines_answer": false,
+      "latency_ms": 7112.36,
+      "tokens": 41,
+      "error": null
+    }
+  ]
+}

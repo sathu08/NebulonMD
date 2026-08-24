@@ -1,0 +1,48 @@
+{
+  "metrics": {
+    "questions": 2,
+    "tool_selection_accuracy": 0.0,
+    "retrieval_accuracy": 1.0,
+    "answer_correctness": 0.0,
+    "hallucination_rate": 0.0,
+    "avg_latency_ms": 29823.4,
+    "max_latency_ms": 31324.73,
+    "avg_tokens": 34.5
+  },
+  "results": [
+    {
+      "id": "q1",
+      "question": "What is my name?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "Sathya",
+      "expected_memory": "Sathya",
+      "actual_tools": [],
+      "retrieval_ok": true,
+      "tool_ok": false,
+      "answer": "I don't have your name stored from our conversation so far \u2014 it's the first message we've exchanged. If you'd like, you can tell me what to call you, and I'll remember it for future chats.",
+      "answer_ok": false,
+      "declines_answer": false,
+      "latency_ms": 31324.73,
+      "tokens": 41,
+      "error": null
+    },
+    {
+      "id": "q2",
+      "question": "What project am I building?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "NebulonMind",
+      "expected_memory": "NebulonMind",
+      "actual_tools": [],
+      "retrieval_ok": true,
+      "tool_ok": false,
+      "answer": "I don't have any record of a project you're building from our conversation so far. Could you share what you're working on?",
+      "answer_ok": false,
+      "declines_answer": false,
+      "latency_ms": 28322.07,
+      "tokens": 28,
+      "error": null
+    }
+  ]
+}

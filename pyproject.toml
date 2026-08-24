@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nebulonmind"
+version = "0.1.0"
+description = "Memory layer for AI assistants on top of NebulonDB (nmd_host)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.30.6",
+    "requests==2.34.2",
+    "python-dotenv==1.2.2",
+    "pydantic==2.13.4",
+    "textual>=0.86,<3.0",
+    "pyfiglet>=1.0,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "httpx==0.28.1",
+]
+
+[project.scripts]
+nebulonmind = "nebulonmind:main"
+
+[tool.setuptools]
+py-modules = ["nebulonmind"]
+
+[tool.setuptools.packages.find]
+include = ["nmd_host*"]
+
+[tool.setuptools.package-data]
+nmd_host = ["web_dir/*.html", "web_dir/css/*.css", "web_dir/js/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["unittest"]
