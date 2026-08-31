@@ -228,12 +228,14 @@ class OpenAIProvider(BaseLLMProvider):
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
+        extra_body = getattr(self, "_extra_body", None)
         try:
             response = self._client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
                 timeout=_env_float("NMD_LLM_TIMEOUT", 60.0),
+                **({"extra_body": extra_body} if extra_body else {}),
             )
         except Exception as exc:
             raise _classify_sdk_error(exc) from exc
@@ -270,6 +272,9 @@ class NvidiaProvider(OpenAIProvider):
             api_key=key,
             base_url="https://integrate.api.nvidia.com/v1",
         )
+        thinking_on = os.environ.get("NMD_LLM_THINKING", "").strip().lower() in ("1", "true", "yes")
+        if not thinking_on:
+            self._extra_body = {"chat_template_kwargs": {"thinking": False}}
 
 
 class QwenProvider(OpenAIProvider):

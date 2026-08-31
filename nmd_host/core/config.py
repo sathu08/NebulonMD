@@ -544,6 +544,7 @@ class NMDConfig:
         self.NMD_LLM_TIMEOUT = self._getint("llm", "NMD_LLM_TIMEOUT", 60)
         self.NMD_LLM_MAX_RETRIES = self._getint("llm", "NMD_LLM_MAX_RETRIES", 3)
         self.NMD_LLM_EXTRACTOR = self._getbool("llm", "NMD_LLM_EXTRACTOR")
+        self.NMD_LLM_THINKING = self._getbool("llm", "NMD_LLM_THINKING")
 
     def _load_lifecycle(self):
         self.NMD_TEMPORARY_TTL_SECONDS = self._getint(
