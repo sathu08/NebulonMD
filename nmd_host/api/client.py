@@ -254,7 +254,7 @@ class NebulonDBClient:
             corpus,
             segment,
             ndb_type,
-            records=[{"text": "{}"}],
+            records=[{"text": '{"_seed": true}'}],
             set_columns=set_columns or ["text"],
             is_precomputed=is_precomputed,
         )

@@ -293,6 +293,22 @@ class QwenProvider(OpenAIProvider):
         )
 
 
+class OpenRouterProvider(OpenAIProvider):
+    """OpenRouter - OpenAI-compatible endpoint for routing across multiple LLMs."""
+
+    provider = "openrouter"
+
+    def __init__(self, model: Optional[str] = None, api_key: Optional[str] = None) -> None:
+        key = api_key or os.environ.get("NMD_LLM_API_KEY")
+        if not key:
+            raise LLMProviderError(_CONFIG_ERROR.format(name="OpenRouter", provider="openrouter"))
+        super().__init__(
+            model=model or os.environ.get("NMD_LLM_MODEL", "deepseek-ai/deepseek-v4-pro-0813"),
+            api_key=key,
+            base_url="https://openrouter.ai/api/v1",
+        )
+
+
 class AnthropicProvider(BaseLLMProvider):
     """Anthropic Claude."""
 
@@ -364,6 +380,7 @@ _PROVIDERS = {
     "nvidia": NvidiaProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
+    "openrouter": OpenRouterProvider,
 }
 
 
