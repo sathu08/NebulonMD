@@ -8,6 +8,7 @@ the engine will accept it.
 
 from __future__ import annotations
 
+import logging
 from typing import List
 
 from .providers import LLMProvider
@@ -19,6 +20,8 @@ from .schemas import (
 )
 
 from .validation import sanitize_decision
+
+logger = logging.getLogger("nmd_host.intelligence.llm_extractor")
 
 
 _CATEGORIES = ", ".join(c.value for c in MemoryCategory)
@@ -84,7 +87,14 @@ class LLMExtractor:
                 d for d in decisions if d.candidate.confidence >= self.min_confidence
             ]
         _stamp_provenance(decisions, conversation)
-        return decisions[: self.max_decisions]
+        result = decisions[: self.max_decisions]
+        if not result:
+            logger.warning(
+                "LLM extraction returned no valid decisions. Raw response: %s. Prompt tokens: ~%d",
+                str(raw)[:500],
+                len(prompt) // 4,
+            )
+        return result
 
 
 def _stamp_provenance(

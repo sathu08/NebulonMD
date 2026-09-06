@@ -126,9 +126,9 @@ async def test_thinking_indicator_lifecycle():
 async def test_user_id_defaults_to_configured_or_user_001(monkeypatch):
     app = NebulonMindApp()
     assert app._user_id == "nmd_user_01"
-    monkeypatch.setenv("NMD_BACKGROUND_USER", "sathya")
+    monkeypatch.setenv("NMD_BACKGROUND_USER", "nmd_user_01")
     app2 = NebulonMindApp()
-    assert app2._user_id == "sathya"
+    assert app2._user_id == "nmd_user_01"
 
 
 @pytest.mark.anyio

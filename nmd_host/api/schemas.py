@@ -65,16 +65,37 @@ _MEMORY_EXAMPLE: dict = {
 
 
 class MemoryCreate(Memory):
-    """Create payload: the full ``Memory`` model, unchanged semantics.
+    """Create payload: the full ``Memory`` model plus convenience fields.
 
     ``memory_id`` is optional — the store assigns one when omitted. The
     server pins the memory to the ``user_id`` query parameter if the body
     carries a different value.
+
+    Convenience fields (merged into ``classification``):
+    * ``lang`` — language code (e.g. "en", "es", "fr")
+    * ``memory_type`` — memory type: "working" | "short_term" | "long_term" | "episodic" | "semantic" | "knowledge" | "doc"
     """
+
+    lang: Optional[str] = None
+    memory_type: Optional[Literal["working", "short_term", "long_term", "episodic", "semantic", "knowledge", "doc"]] = None
 
     model_config = ConfigDict(
         json_schema_extra={"examples": [{k: v for k, v in _MEMORY_EXAMPLE.items() if k != "memory_id"}]}
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_convenience_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        classification = data.get("classification") or {}
+        if data.get("lang") is not None:
+            classification["lang"] = data["lang"]
+        if data.get("memory_type") is not None:
+            classification["memory_type"] = data["memory_type"]
+        if classification:
+            data["classification"] = classification
+        return data
 
 
 class MemoryUpdate(BaseModel):
@@ -82,6 +103,10 @@ class MemoryUpdate(BaseModel):
 
     Absent fields are left untouched (same merge semantics the store
     already applies to a raw dict, now with schema validation).
+
+    Convenience fields (merged into ``classification``):
+    * ``lang`` — language code (e.g. "en", "es", "fr")
+    * ``memory_type`` — memory type: "working" | "short_term" | "long_term" | "episodic" | "semantic" | "knowledge" | "doc"
     """
 
     model_config = ConfigDict(
@@ -100,6 +125,22 @@ class MemoryUpdate(BaseModel):
     status: Optional[MemoryStatus] = None
     entities: Optional[List[str]] = None
     relationships: Optional[List[Relationship]] = None
+    lang: Optional[str] = None
+    memory_type: Optional[Literal["working", "short_term", "long_term", "episodic", "semantic", "knowledge", "doc"]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_convenience_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        classification = data.get("classification") or {}
+        if data.get("lang") is not None:
+            classification["lang"] = data["lang"]
+        if data.get("memory_type") is not None:
+            classification["memory_type"] = data["memory_type"]
+        if classification:
+            data["classification"] = classification
+        return data
 
 
 class MemoryData(BaseModel):

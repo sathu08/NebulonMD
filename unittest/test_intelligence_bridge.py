@@ -10,12 +10,12 @@ def test_process_stores_only_remembered():
     repo = InMemoryRepository()
     intelligence = MemoryIntelligence(repo, user_id="user_007")
     conversation = Conversation.from_user_message(
-        "My name is Sathya. I think the weather is fine today."
+        "My name is nmd_user_01. I think the weather is fine today."
     )
     memories = intelligence.process(conversation)
 
     assert len(memories) == 1
-    stored = repo.search("sathya name", top_k=5)
+    stored = repo.search("nmd_user_01 name", top_k=5)
     assert len(stored) == 1
     assert stored[0].classification.category == "identity"
 
@@ -37,9 +37,9 @@ def test_process_persists_all_categories():
 def test_process_returns_memories_without_storing():
     repo = InMemoryRepository()
     intelligence = MemoryIntelligence(repo, user_id="user_007")
-    memories = intelligence.process_text("My name is Sathya.", persist=False)
+    memories = intelligence.process_text("My name is nmd_user_01.", persist=False)
     assert len(memories) == 1
-    assert repo.search("sathya", top_k=5) == []
+    assert repo.search("nmd_user_01", top_k=5) == []
 
 
 def test_accepts_mind_like_store_with_store_method():

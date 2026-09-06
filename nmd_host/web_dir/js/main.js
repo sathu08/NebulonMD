@@ -7,6 +7,12 @@ const COMMANDS = [{
                 shortcut: 'h',
                 action: () => showHelp()
             }, {
+                name: '/remember',
+                icon: '💾',
+                desc: 'Store a memory: /remember "text" [--lang=en] [--type=doc|semantic|episodic|working|short_term|long_term|knowledge]',
+                shortcut: 'm',
+                action: (args) => rememberMemory(args)
+            }, {
                 name: '/clear',
                 icon: '🧹',
                 desc: 'Clear the terminal screen',
@@ -833,6 +839,64 @@ const COMMANDS = [{
                         addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
                     })
                     .catch(err => addMessage('error', `Evaluation failed: ${err.message}`, 'error'))
+                    .finally(() => scrollToBottom()));
+            }
+
+            // ============ REMEMBER MEMORY ============
+            function rememberMemory(args) {
+                if (!args || !args.trim()) {
+                    addMessage('warning',
+                        'Usage: /remember "text to store" [--lang=en] [--type=doc|semantic|episodic|working|short_term|long_term|knowledge]',
+                        'warning');
+                    return;
+                }
+
+                // Parse args: extract quoted text and flags
+                const textMatch = args.match(/"([^"]+)"/) || args.match(/'([^']+)'/);
+                if (!textMatch) {
+                    addMessage('warning', 'Please provide text to store in quotes: /remember "your text"', 'warning');
+                    return;
+                }
+                const text = textMatch[1];
+
+                // Parse flags
+                const langMatch = args.match(/--lang=(\S+)/);
+                const typeMatch = args.match(/--type=(\S+)/);
+
+                const lang = langMatch ? langMatch[1] : 'en';
+                const memoryType = typeMatch ? typeMatch[1] : 'semantic';
+
+                // Validate memory_type
+                const validTypes = ['working', 'short_term', 'long_term', 'episodic', 'semantic', 'knowledge', 'doc'];
+                if (!validTypes.includes(memoryType)) {
+                    addMessage('warning',
+                        `Invalid type: ${memoryType}. Valid types: ${validTypes.join(', ')}`,
+                        'warning');
+                    return;
+                }
+
+                addMessage('user', `/remember "${text}" ${langMatch ? '--lang=' + lang : ''} ${typeMatch ? '--type=' + memoryType : ''}`, 'user');
+                addMessage('system', `Storing memory (lang=${lang}, type=${memoryType})...`, 'system');
+
+                const payload = {
+                    content: { text: text },
+                    lang: lang,
+                    memory_type: memoryType
+                };
+
+                simulateTyping(() => apiPost('/memory', payload, { user_id: currentUser })
+                    .then(body => {
+                        const d = body.data || {};
+                        const mem = d.memory || {};
+                        const cls = mem.classification || {};
+                        const storedType = cls.memory_type || memoryType;
+                        const storedLang = cls.lang || lang;
+                        addMessage('success',
+                            `Memory stored: ${mem.memory_id || 'OK'} (${storedType}, ${storedLang})`,
+                            'success');
+                        addMessage('ai', `Stored: "${text}"`, 'ai');
+                    })
+                    .catch(err => addMessage('error', `Store failed: ${err.message}`, 'error'))
                     .finally(() => scrollToBottom()));
             }
 

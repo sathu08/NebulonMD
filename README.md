@@ -120,7 +120,8 @@ NEBULONDB_PASSWORD=...
 | | `nmd_llm_timeout` / `nmd_llm_max_retries` | `60` / `3` | request tuning |
 | `[backend]` | `nebulondb_api_host` / `nebulondb_api_port` | `localhost` / `6969` | where NebulonDB runs |
 | `[server]` | `nebulondmind_api_host` / `nebulondmind_api_port` | `0.0.0.0` / `9696` | where Mind listens |
-| `[agent]` | `nmd_agent_temperature`, `nmd_agent_max_turns`, `nmd_agent_system_prompt` | — | agent-chat behaviour |
+| `[agent]` | `nmd_agent_model` | (uses `nmd_llm_model`) | optional: separate model for agent tool-calling |
+| | `nmd_agent_temperature`, `nmd_agent_max_turns`, `nmd_agent_system_prompt` | — | agent-chat behaviour |
 | `[ranking]` | `nmd_ranking_*_weight` | sums to 1.0 | retrieval ranking signals |
 | `[lifecycle]` | `nmd_temporary_ttl_seconds`, `nmd_lifecycle_auto_cleanup_cron` | 30 days, daily 03:00 | auto-forgetting sweep |
 | `[context]` | `nmd_context_max_items` / `nmd_context_max_characters` | `10` / `6000` | LLM context bounds |
@@ -168,30 +169,143 @@ recalls them in later sessions. Chat history survives page refreshes.
 > The terminal CLI/TUI is still **under production** — please use the website
 > console for day-to-day usage until it ships.
 
-### REST API
+### REST API — All Endpoints
 
-Every route scopes to a registered username via `?user_id=`:
+Every route scopes to a registered username via `?user_id=` (or `username=` for `/user/*`).
+
+| Category | Method | Endpoint | Description |
+|----------|--------|----------|-------------|
+| **Service** | GET | `/health/live` | Liveness probe (process up) |
+| | GET | `/health/ready` | Readiness probe (backend reachable) |
+| | GET | `/health` | Combined health (compat) |
+| | GET | `/metrics` | Prometheus metrics |
+| **User** | POST | `/user/create_user` | Register username (idempotent) |
+| | GET | `/user/resolve` | Resolve username → user_id |
+| | POST | `/user/setup` | Activate existing username |
+| **Memory** | POST | `/memory` | Store memory (with `gate=true` runs lifecycle gate) |
+| | GET | `/memory/{id}` | Get memory by ID |
+| | PUT | `/memory/{id}` | Update memory |
+| | DELETE | `/memory/{id}` | Delete memory |
+| | GET | `/search` | Semantic recall (ranked) |
+| | POST | `/memory/context` | Build bounded LLM context |
+| | POST | `/memory/{id}/relate` | Link memory to entity |
+| **Intelligence** | POST | `/intelligence/decide` | Extract decisions (no storage) |
+| | POST | `/intelligence/process` | Extract → lifecycle gate → store |
+| **Agent** | POST | `/agent/chat` | **Main chat**: tool-calling loop (recall, remember, decide) |
+| | POST | `/agent/session` | Create persistent session |
+| | GET | `/agent/session/{id}` | Get session |
+| | GET | `/agent/sessions` | List sessions |
+| | DELETE | `/agent/session/{id}` | Close session |
+| **Background** | POST | `/background/memory/run` | Run MemoryAgent (consolidate/review) |
+| | POST | `/background/task/run` | Run TaskAgent (weekly summary) |
+| | GET | `/background/status` | Scheduler status |
+| **Evaluation** | GET | `/evaluation/dataset` | Get bundled test dataset |
+| | POST | `/evaluation/run` | Run evaluation suite |
+| **LLM** | GET | `/llm/status` | Provider health + model info |
+
+#### Quick Examples
 
 ```bash
-# create a mind user
-curl -X POST "http://localhost:9696/api/NebulonMind/user/create_user?user_id=nebulon_user"
+# Register user
+curl -X POST "http://localhost:9696/api/NebulonMind/user/create_user?user_id=sathya"
 
-# agent chat (memory-aware tool loop: remember + recall)
-curl -X POST "http://localhost:9696/api/NebulonMind/agent/chat?user_id=nebulon_user" \
+# Agent chat (uses recall + remember + decide tools internally)
+curl -X POST "http://localhost:9696/api/NebulonMind/agent/chat?user_id=sathya" \
   -H "Content-Type: application/json" \
-  -d '{"text": "Remember that my birthday is May 5"}'
+  -d '{"text": "My name is Sathya, I work at NebulonMD"}'
 
-# semantic search over stored memories
-curl "http://localhost:9696/api/NebulonMind/search?q=birthday&user_id=nebulon_user"
+# Semantic search
+curl "http://localhost:9696/api/NebulonMind/search?q=NebulonMD&user_id=sathya"
+
+# Store memory directly (with lifecycle gate)
+curl -X POST "http://localhost:9696/api/NebulonMind/memory?user_id=sathya&gate=true" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Important fact", "category": "fact"}'
+
+# Run background consolidation manually
+curl -X POST "http://localhost:9696/api/NebulonMind/background/memory/run?user_id=sathya" \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "consolidate"}'
+
+# Run weekly summary manually
+curl -X POST "http://localhost:9696/api/NebulonMind/background/task/run?user_id=sathya" \
+  -H "Content-Type: application/json" \
+  -d '{"days": 7}'
+
+# Check LLM status
+curl "http://localhost:9696/api/NebulonMind/llm/status"
 ```
 
 Interactive OpenAPI docs: `http://localhost:9696/docs`
 
-### Use it from your own agent
+### How `/agent/chat` Works (Internal Pipeline)
 
-Any external agent can use NebulonMind as its memory/brain through the REST
-API — delegate chat to `/agent/chat`, or write/read memories directly with
-`POST /memory?gate=true` and `GET /search`.
+The chat endpoint **does not call other HTTP endpoints** — it runs the full pipeline in-process:
+
+```
+User text → /agent/chat
+    │
+    ├─► LLM Provider (from nmd_llm_provider + nmd_llm_model)
+    │
+    ├─► Tools available to LLM:
+    │       • recall(query)  ──► /search logic (vector + graph + ranking)
+    │       • remember(text) ──► /intelligence/process logic (extract → gate → store)
+    │       • decide(text)   ──► /intelligence/decide logic (extract only)
+    │
+    └─► Returns final answer + trace
+```
+
+**So `/search`, `/intelligence/decide`, `/intelligence/process` are already used inside chat** — you don't call them separately.
+
+### Background Agents — Automatic + Manual
+
+The scheduler starts automatically with the server (`nmd_host/api/server.py:328`). Jobs run on cron:
+
+| Agent | Cron (default) | Trigger | Output |
+|-------|----------------|---------|--------|
+| **MemoryAgent** (consolidation) | `0 2 * * *` (daily 02:00) | Auto + Manual | Reviews/merges duplicate memories |
+| **TaskAgent** (weekly summary) | `0 9 * * 0` (Sun 09:00) | Auto + Manual | Stores weekly summary as memory |
+| **Auto-delete expired** | `0 3 * * *` (daily 03:00) | Auto only | Deletes TTL-expired memories |
+
+**To run manually** (e.g., after adding lots of memories):
+```bash
+# Consolidate now
+curl -X POST ".../background/memory/run?user_id=sathya" -d '{"mode": "consolidate"}'
+
+# Weekly summary now
+curl -X POST ".../background/task/run?user_id=sathya" -d '{"days": 7}'
+```
+
+**Results become searchable memories** — ask in chat: *"What did I work on last week?"* → recalls the TaskAgent summary memory.
+
+### Agent Model (Separate LLM for Tool-Calling)
+
+`/agent/chat` can use a **different LLM** than the extractor/main pipeline:
+
+| Setting | Config Key | Env Var | Default |
+|---------|------------|---------|---------|
+| Agent model | `nmd_agent_model` | `NMD_AGENT_MODEL` | Falls back to `nmd_llm_model` |
+
+**Why use a separate model?**
+- **Cost**: Smaller/cheaper model (e.g., Nemotron 4B) for agent loops
+- **Latency**: Faster tool-calling turns
+- **Quality**: Some models excel at structured function calling
+
+**Example:**
+```ini
+[llm]
+nmd_llm_model = nvidia/nemotron-3.5-lightning-30b-a3b   # main (extraction, chat)
+
+[agent]
+nmd_agent_model = nvidia/nemotron-4b                     # agent tool-calling only
+```
+
+**Priority chain:**
+```
+nmd_agent_model → NMD_AGENT_MODEL → nmd_llm_model → NMD_LLM_MODEL → provider default
+```
+
+If both empty → uses provider hardcoded default (Nemotron 3.5 for NVIDIA).
 
 ---
 

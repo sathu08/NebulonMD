@@ -204,9 +204,9 @@ def test_valid_production_config_passes():
 
 def test_sample_credentials_rejected_in_production():
     problems = validate_production_config(
-        _prod_service(), _prod_backend(username="sathya", password="sathya")
+        _prod_service(), _prod_backend(username="nmd_user_01", password="nmd_user_01")
     )
-    assert any("sathya" in p for p in problems)
+    assert any("nmd_user_01" in p for p in problems)
 
 
 def test_plaintext_backend_rejected_in_production():
@@ -229,8 +229,8 @@ def test_missing_rate_limit_rejected_in_production():
 
 def test_create_app_fails_fast_when_production_invalid(monkeypatch):
     monkeypatch.setenv("NMD_ENV", "production")
-    monkeypatch.setenv("NEBULONDB_USERNAME", "sathya")
-    monkeypatch.setenv("NEBULONDB_PASSWORD", "sathya")
+    monkeypatch.setenv("NEBULONDB_USERNAME", "nmd_user_01")
+    monkeypatch.setenv("NEBULONDB_PASSWORD", "nmd_user_01")
     monkeypatch.setenv("NEBULONDB_API_SCHEME", "http")
     monkeypatch.setenv("NMD_API_RATE_LIMIT_PER_MINUTE", "60")
     with pytest.raises(RuntimeError, match="invalid production configuration"):

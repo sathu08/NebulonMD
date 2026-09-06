@@ -271,6 +271,8 @@ class NebulonDBClient:
         records: List[Dict[str, Any]],
         set_columns: Optional[List[str]] = None,
         is_precomputed: Optional[bool] = None,
+        lang_type: Optional[str] = None,
+        doc_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Insert records into a segment (cosmos: docs, orbit: text to embed)."""
         payload: Dict[str, Any] = {
@@ -282,6 +284,11 @@ class NebulonDBClient:
         }
         if is_precomputed is not None:
             payload["is_precomputed"] = is_precomputed
+        if lang_type is not None:
+            payload["lang_type"] = lang_type
+        if doc_type is not None:
+            payload["doc_type"] = doc_type
+        logger.debug(f"load_segment payload: {payload}")
         return self._request("POST", "/segment/load_segment", payload)
 
     def get_data(

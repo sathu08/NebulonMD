@@ -679,7 +679,7 @@ def _load_cfg(cfg_path: Optional[Path] = None, override: bool = False) -> bool:
 # Credentials baked into the sample ``.env`` for local development. These are
 # rejected outright in production (see ``validate_production_config``) — never
 # a valid production defaults pair.
-_SAMPLE_DEV_CREDENTIALS = (("sathya", "sathya"),)
+_SAMPLE_DEV_CREDENTIALS = (("nmd_user_01", "nmd_user_01"),)
 
 
 # ==========================================================
@@ -772,12 +772,13 @@ class ServiceConfig:
     llm_extractor: bool = False
     auth_token: str = ""
     background_persist_state: bool = False
+    agent_model: str = ""
 
     @classmethod
     def from_env(cls, env_file: Optional[Path] = None) -> "ServiceConfig":
         """Build config from environment variables, seeded by cfg + ``.env``."""
         _load_cfg()
-        load_dotenv(str(env_file or _default_env_path()))
+        load_dotenv(str(env_file or _default_env_path()), override=True)
         origins = tuple(
             origin.strip()
             for origin in os.environ.get("NMD_API_CORS_ORIGINS", "").split(",")
@@ -806,6 +807,7 @@ class ServiceConfig:
             llm_extractor=_env_bool("NMD_LLM_EXTRACTOR"),
             auth_token=os.environ.get("NMD_API_AUTH_TOKEN", "").strip(),
             background_persist_state=_env_bool("NMD_BACKGROUND_PERSIST_STATE"),
+            agent_model=os.environ.get("NMD_AGENT_MODEL", "").strip(),
         )
 
     @classmethod
@@ -834,6 +836,7 @@ class ServiceConfig:
             llm_extractor=cfg.NMD_LLM_EXTRACTOR,
             auth_token=os.environ.get("NMD_API_AUTH_TOKEN", "").strip(),
             background_persist_state=cfg.NMD_BACKGROUND_PERSIST_STATE,
+            agent_model=cfg.NMD_AGENT_MODEL.strip(),
         )
 
 
@@ -852,7 +855,7 @@ def validate_production_config(
     refuses to boot with any problem rather than run with a weakened posture.
 
     Rules:
-    * NebulonDB credentials are set and not the sample ``sathya/sathya``.
+    * NebulonDB credentials are set and not the sample ``nmd_user_01/nmd_user_01``.
     * Backend calls use HTTPS unless ``NMD_API_ALLOW_PLAINTEXT_HTTP=true``
       (explicit override for isolated networks with TLS at the proxy).
     * A rate limit is configured (``NMD_API_RATE_LIMIT_PER_MINUTE > 0``).
@@ -869,7 +872,7 @@ def validate_production_config(
             problems.append("NEBULONDB_USERNAME and NEBULONDB_PASSWORD must be set")
         if (backend.username, backend.password) in _SAMPLE_DEV_CREDENTIALS:
             problems.append(
-                "sample NEBULONDB_* credentials (sathya/sathya) are not allowed "
+                "sample NEBULONDB_* credentials (nmd_user_01/nmd_user_01) are not allowed "
                 "in production"
             )
         if backend.scheme != "https" and not service.allow_plaintext_http:

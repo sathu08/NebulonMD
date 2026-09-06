@@ -65,7 +65,7 @@ def test_health_envelope(provider, client):
 def test_health_never_leaks_backend_credentials(client):
     resp = client.get("/api/NebulonMind/health")
     text = str(resp.json())
-    for secret in ("sathya", "6969", "NEBULONDB_", "password"):
+    for secret in ("nmd_user_01", "6969", "NEBULONDB_", "password"):
         assert secret not in text
 
 
@@ -93,7 +93,7 @@ def test_openapi_docs_complete(provider, client):
 
 def test_openapi_never_exposes_credentials_in_descriptions(client):
     spec_text = str(client.get("/openapi.json").json())
-    for secret in ("NEBULONDB_USERNAME", "NEBULONDB_PASSWORD", "6969", "sathya"):
+    for secret in ("NEBULONDB_USERNAME", "NEBULONDB_PASSWORD", "6969", "nmd_user_01"):
         assert secret not in spec_text
 
 

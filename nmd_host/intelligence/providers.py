@@ -404,6 +404,28 @@ def provider_from_env(max_retries: Optional[int] = None) -> LLMProvider:
     return provider
 
 
+def provider_from_env_with_model(
+    model: Optional[str] = None, max_retries: Optional[int] = None
+) -> LLMProvider:
+    """Build the provider from env, optionally overriding the model.
+
+    If ``model`` is provided, it replaces the default model for that provider.
+    """
+    name = os.environ.get("NMD_LLM_PROVIDER", "").strip().lower()
+    if name not in _PROVIDERS:
+        raise LLMProviderError(
+            f"NMD_LLM_PROVIDER={name or '(unset)'!r}; expected one of "
+            f"{sorted(_PROVIDERS)}"
+        )
+    provider_cls = _PROVIDERS[name]
+    provider = provider_cls(model=model) if model else provider_cls()
+    if max_retries is None:
+        max_retries = _env_int("NMD_LLM_MAX_RETRIES", 3)
+    if max_retries > 0:
+        return RetryingLLMProvider(provider, max_retries=max_retries)
+    return provider
+
+
 __all__ = [
     "AnthropicProvider",
     "BaseLLMProvider",
@@ -422,4 +444,5 @@ __all__ = [
     "QwenProvider",
     "RetryingLLMProvider",
     "provider_from_env",
+    "provider_from_env_with_model",
 ]

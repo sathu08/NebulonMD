@@ -605,7 +605,7 @@ class NebulonMindApp(App):
         """Register the user ``username`` via the API."""
         username = (username or "").strip()
         if not _valid_username(username):
-            self._append_message("system", "Usage: `/create <username>` — e.g. `/create sathya`")
+            self._append_message("system", "Usage: `/create <username>` — e.g. `/create nmd_user_01`")
             return
         self._append_message("user", f"/create {username}")
         self.send_button.disabled = True
@@ -615,7 +615,7 @@ class NebulonMindApp(App):
         """Switch to an existing user ``username`` (never auto-creates)."""
         username = (username or "").strip()
         if not _valid_username(username):
-            self._append_message("system", "Usage: `/setup <username>` — e.g. `/setup sathya`")
+            self._append_message("system", "Usage: `/setup <username>` — e.g. `/setup nmd_user_01`")
             return
         self._append_message("user", f"/setup {username}")
         self.send_button.disabled = True
@@ -683,7 +683,7 @@ class NebulonMindApp(App):
         screen = UsernameScreen(
             title="Create a new user",
             hint=(
-                "Enter a NEW NebulonMind username (e.g. `sathya`). "
+                "Enter a NEW NebulonMind username (e.g. `nmd_user_01`). "
                 "It gets its own opaque user_id in NebulonDB."
             ),
             submit_label="Create",

@@ -29,12 +29,12 @@ def test_conversation_to_memory_to_recall(api_client, unique_user):
     assert len(fresh.truth.read_all()) == 3
     assert fresh.vector.count() == 3
 
-    results = fresh.recall("sathya python backend", top_k=3)
+    results = fresh.recall("nmd_user_01 python backend", top_k=3)
     assert len(results) == 3
     skill = next(r for r in results if r.classification.category == "skill")
     assert "Python" in skill.entities
     assert any(
-        r.source == "Sathya" and r.target == "Python" and r.relation == "HAS_SKILL"
+        r.source == "nmd_user_01" and r.target == "Python" and r.relation == "HAS_SKILL"
         for r in skill.relationships
     )
 

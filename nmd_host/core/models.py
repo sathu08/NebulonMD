@@ -23,6 +23,7 @@ class MemoryType(str, Enum):
     EPISODIC = "episodic"
     SEMANTIC = "semantic"
     KNOWLEDGE = "knowledge"
+    DOC = "doc"
 
 
 class Priority(str, Enum):
@@ -68,6 +69,7 @@ class Classification(BaseModel):
     memory_type: MemoryType = MemoryType.SEMANTIC
     category: str = "general"
     source: str = "conversation"
+    lang: str = "en"
 
 
 class Provenance(BaseModel):
@@ -134,7 +136,33 @@ class Memory(BaseModel):
         The truth store JSON-encodes the whole doc into the COSMOS ``text``
         column (the engine only persists ``{text, lang, type, created_at}``).
         """
-        return self.model_dump(mode="json")
+        doc = self.model_dump(mode="json")
+        # Add top-level lang/type for NebulonDB dashboard visibility
+        # Use NebulonDB document types (chat/doc/other) for 'type' field
+        classification = doc.get("classification", {})
+        if classification.get("lang"):
+            doc["lang"] = classification["lang"]
+        memory_type = classification.get("memory_type", "semantic")
+        category = classification.get("category", "general")
+        # Map to NebulonDB document type
+        if memory_type == "doc":
+            doc["type"] = "doc"
+        else:
+            doc_type_map = {
+                "general": "chat",
+                "identity": "chat",
+                "preference": "chat",
+                "skill": "chat",
+                "goal": "chat",
+                "project": "chat",
+                "fact": "chat",
+                "event": "chat",
+                "task": "chat",
+                "opinion": "chat",
+                "knowledge": "chat",
+            }
+            doc["type"] = doc_type_map.get(category, "other")
+        return doc
 
     @classmethod
     def from_truth_doc(cls, doc: Dict[str, Any]) -> "Memory":

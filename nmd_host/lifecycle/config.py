@@ -40,21 +40,7 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-@dataclass
-class LifecycleConfig:
-    """Aggregate Step 3 settings (sub-configs read their own env keys)."""
-
-    auto_cleanup: bool = False
-
-    @classmethod
-    def from_env(cls) -> "LifecycleConfig":
-        return cls(
-            auto_cleanup=env_bool("NMD_LIFECYCLE_AUTO_CLEANUP", False),
-        )
-
-
 __all__ = [
-    "LifecycleConfig",
     "env_bool",
     "env_float",
     "env_int",

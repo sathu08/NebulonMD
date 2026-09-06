@@ -336,7 +336,7 @@ def test_store_with_unreachable_backend_returns_500_envelope():
     assert body["success"] is False
     assert body["message"] == "internal server error"
     leaked = str(body).lower()
-    assert "sathya" not in leaked
+    assert "nmd_user_01" not in leaked
     assert "127.0.0.1" not in leaked
     assert "traceback" not in leaked
 

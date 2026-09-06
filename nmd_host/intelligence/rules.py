@@ -43,6 +43,16 @@ class Rule:
 RULES: List[Rule] = [
     # identity ---------------------------------------------------------
     Rule(MemoryCategory.IDENTITY, r"\bmy name(?:'s| is) (?P<obj>[A-Z][\w.'-]+)", strength=0.95, slot="name"),
+    Rule(
+        MemoryCategory.IDENTITY,
+        r"\bi am (?!(?:super|very|really|so|extremely|quite|pretty|fairly|rather|somewhat|"
+        r"happy|sad|tired|excited|angry|glad|upset|worried|nervous|anxious|confused|"
+        r"surprised|bored|busy|free|ready|done|finished|good|bad|fine|okay|ok|well|"
+        r"ill|sick|great|awesome|terrible|horrible|wonderful|amazing|fantastic)\b)"
+        r"(?P<obj>[A-Z][\w.'-]+)",
+        strength=0.85,
+        slot="name",
+    ),
     Rule(MemoryCategory.IDENTITY, r"\bi am from (?P<obj>[\w .'-]+)", strength=0.80, slot="origin"),
     Rule(MemoryCategory.IDENTITY, r"\bi live in (?P<obj>[\w .'-]+)", strength=0.80, slot="city"),
     Rule(
@@ -211,7 +221,9 @@ class RuleBasedExtractor:
                 entities = [e for e in extract_entities(sentence) if e not in ("User",)]
                 if rule.category is MemoryCategory.IDENTITY and obj:
                     subject = obj
-                if obj and obj not in entities and _looks_named(obj):
+                    if obj not in entities:
+                        entities.append(obj)
+                elif obj and obj not in entities and _looks_named(obj):
                     entities.append(obj)
 
                 has_entities = bool(entities)

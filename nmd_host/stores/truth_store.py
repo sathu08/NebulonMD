@@ -43,12 +43,41 @@ class TruthStore:
         if not memory_id:
             raise ValueError("Truth doc must contain 'memory_id'")
         self.delete(memory_id)
+        
+        # Extract lang and type from the document
+        classification = doc.get("classification", {})
+        lang = classification.get("lang", "en")
+        category = classification.get("category", "general")
+        memory_type = classification.get("memory_type", "semantic")
+        # Map memory_type/category to valid DocumentType (NebulonDB requirement)
+        # NebulonDB only accepts certain document types (chat, other, etc.)
+        # "doc" memory_type is stored internally but mapped to "other" for NebulonDB
+        if memory_type == "doc":
+            type_ = "other"
+        else:
+            doc_type_map = {
+                "general": "chat",
+                "identity": "chat",
+                "preference": "chat",
+                "skill": "chat",
+                "goal": "chat",
+                "project": "chat",
+                "fact": "chat",
+                "event": "chat",
+                "task": "chat",
+                "opinion": "chat",
+                "knowledge": "chat",
+            }
+            type_ = doc_type_map.get(category, "other")
+        
         self._api.load_segment(
             self.CORPUS,
             self._segment,
             "cosmos",
             records=[{"text": json.dumps(doc)}],
             set_columns=["text"],
+            lang_type=lang,
+            doc_type=type_,
         )
 
     def get(self, memory_id: str) -> Optional[Dict[str, Any]]:
