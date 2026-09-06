@@ -65,7 +65,7 @@ class _FakeBackend:
             if r["corpus"] == corpus and r["segment"] == segment
         ]
 
-    def load_segment(self, corpus, segment, ndb_type, records, set_columns=None, is_precomputed=None):
+    def load_segment(self, corpus, segment, ndb_type, records, set_columns=None, is_precomputed=None, lang_type=None, doc_type=None, lang=None):
         loaded: list = []
         for record in records:
             self._next_id += 1
