@@ -67,8 +67,14 @@ class TruthStore:
                 "task": "chat",
                 "opinion": "chat",
                 "knowledge": "chat",
+                # Additional mappings to ensure all categories are covered
+                "working": "chat",
+                "short_term": "chat",
+                "long_term": "chat",
+                "episodic": "chat",
+                "semantic": "chat",
             }
-            type_ = doc_type_map.get(category, "other")
+            type_ = doc_type_map.get(category, "chat")  # Default to "chat" instead of "other"
         
         self._api.load_segment(
             self.CORPUS,

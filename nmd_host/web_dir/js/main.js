@@ -763,7 +763,7 @@ const COMMANDS = [{
                             : (imp.priority || '');
                         addMessage('ai',
                             `[${i + 1}] ${m.content.text || ''}\n` +
-                            `    type=${cls.memory_type || cls.category || ''}  ${score}`,
+                            `    lang=${cls.lang || 'en'} type=${cls.memory_type || cls.category || ''}  ${score}`,
                             'ai');
                     });
                 }).catch(err => addMessage('error', `Search failed: ${err.message}`, 'error'));

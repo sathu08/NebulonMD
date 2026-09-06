@@ -34,6 +34,7 @@ Conversation ──► Decision Engine ──► Lifecycle gate ──► Nebulo
 
 | File | Purpose |
 |---|---|
+| [API_ENDPOINTS.md](docs/API_ENDPOINTS.md) | Complete API reference with all 31 endpoints, request/response examples, and quick start guides |
 | [AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) | How to plug NebulonMind into agents — three chat patterns, auth options, caveats |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full architecture: layers, domain model, persistence, agent runtime, LLM providers, background agents |
 | [FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md) | Complete project file reference — top-level files, tests/, docs/, nmd_host/, key env vars, quick-start commands |
@@ -136,6 +137,8 @@ nebulonmind restart
 nebulonmind stop
 ```
 
+On start, `__pycache__` directories are automatically cleared to prevent stale bytecode.
+
 Make sure the LLM key reaches the server process (the daemon inherits your
 shell environment):
 
@@ -165,6 +168,20 @@ Open **<http://localhost:9696/api/NebulonMind/dashboard/>** in a browser.
 Register/login with your username, then chat — the assistant automatically
 remembers facts you share ("my name is Alex", "I work with Python") and
 recalls them in later sessions. Chat history survives page refreshes.
+
+**Slash commands in console:**
+
+| Command | Description |
+|---|---|
+| `/remember "text" [--lang=en] [--type=doc\|semantic\|episodic\|working\|short_term\|long_term\|knowledge]` | Store a memory with optional language and type |
+| `/search <query>` | Semantic recall |
+| `/context <query>` | Build bounded LLM context |
+| `/create <username>` | Register new user |
+| `/setup <username>` | Switch to existing user |
+| `/whoami` | Show current user |
+| `/status` | API + backend + LLM health |
+| `/clear` | Clear terminal |
+| `/help` | List all commands |
 
 > The terminal CLI/TUI is still **under production** — please use the website
 > console for day-to-day usage until it ships.
@@ -207,28 +224,33 @@ Every route scopes to a registered username via `?user_id=` (or `username=` for 
 
 ```bash
 # Register user
-curl -X POST "http://localhost:9696/api/NebulonMind/user/create_user?user_id=sathya"
+curl -X POST "http://localhost:9696/api/NebulonMind/user/create_user?user_id=nmd001"
 
 # Agent chat (uses recall + remember + decide tools internally)
-curl -X POST "http://localhost:9696/api/NebulonMind/agent/chat?user_id=sathya" \
+curl -X POST "http://localhost:9696/api/NebulonMind/agent/chat?user_id=nmd001" \
   -H "Content-Type: application/json" \
-  -d '{"text": "My name is Sathya, I work at NebulonMD"}'
+  -d '{"text": "My name is nmd001, I work at NebulonMD"}'
 
 # Semantic search
-curl "http://localhost:9696/api/NebulonMind/search?q=NebulonMD&user_id=sathya"
+curl "http://localhost:9696/api/NebulonMind/search?q=NebulonMD&user_id=nmd001"
 
 # Store memory directly (with lifecycle gate)
-curl -X POST "http://localhost:9696/api/NebulonMind/memory?user_id=sathya&gate=true" \
+curl -X POST "http://localhost:9696/api/NebulonMind/memory?user_id=nmd001&gate=true" \
   -H "Content-Type: application/json" \
   -d '{"text": "Important fact", "category": "fact"}'
 
+# Store memory with custom language and type
+curl -X POST "http://localhost:9696/api/NebulonMind/memory?user_id=nmd001&gate=true" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Document in Spanish", "lang": "es", "memory_type": "doc"}'
+
 # Run background consolidation manually
-curl -X POST "http://localhost:9696/api/NebulonMind/background/memory/run?user_id=sathya" \
+curl -X POST "http://localhost:9696/api/NebulonMind/background/memory/run?user_id=nmd001" \
   -H "Content-Type: application/json" \
   -d '{"mode": "consolidate"}'
 
 # Run weekly summary manually
-curl -X POST "http://localhost:9696/api/NebulonMind/background/task/run?user_id=sathya" \
+curl -X POST "http://localhost:9696/api/NebulonMind/background/task/run?user_id=nmd001" \
   -H "Content-Type: application/json" \
   -d '{"days": 7}'
 
@@ -237,6 +259,16 @@ curl "http://localhost:9696/api/NebulonMind/llm/status"
 ```
 
 Interactive OpenAPI docs: `http://localhost:9696/docs`
+
+### NebulonDB Dashboard
+
+Open **<http://localhost:6969/api/NebulonDB/dashboard/>** to view raw documents in NebulonDB.
+
+The segment data table now displays `lang` and `type` fields for each record:
+- `lang` — language code (e.g., `en`, `es`) from the `lang_type` parameter
+- `type` — document type (`chat`, `doc`, `other`) mapped from `memory_type`
+
+This helps verify that documents are stored with the correct metadata.
 
 ### How `/agent/chat` Works (Internal Pipeline)
 
@@ -319,6 +351,7 @@ If both empty → uses provider hardcoded default (Nemotron 3.5 for NVIDIA).
 | `EPISODIC` | events | "completed Phase 1" |
 | `SEMANTIC` | generalized facts | "user builds AI systems" |
 | `KNOWLEDGE` | external info | docs, papers |
+| `DOC` | document uploads | PDFs, manuals, files |
 
 Retention is independent of type: `permanent`, `temporary` (TTL), or `session`.
 
