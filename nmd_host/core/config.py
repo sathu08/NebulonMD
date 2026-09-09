@@ -169,9 +169,11 @@ SETTINGS_GROUPS: list = [
         "keys": [
             {"key": "nmd_llm_provider", "type": "str", "label": "Provider"},
             {"key": "nmd_llm_model", "type": "str", "label": "Model"},
+            {"key": "nmd_llm_base_url", "type": "str", "label": "Base URL (for 'other' provider)"},
             {"key": "nmd_llm_timeout", "type": "int", "label": "Timeout (s)"},
             {"key": "nmd_llm_max_retries", "type": "int", "label": "Max retries"},
             {"key": "nmd_llm_extractor", "type": "bool", "label": "LLM extractor"},
+            {"key": "nmd_llm_extractor_lenient", "type": "bool", "label": "Lenient extraction (fallback to rules)"},
         ],
     },
     {
@@ -541,9 +543,11 @@ class NMDConfig:
     def _load_llm(self):
         self.NMD_LLM_PROVIDER = self._config.get("llm", "NMD_LLM_PROVIDER", fallback="")
         self.NMD_LLM_MODEL = self._config.get("llm", "NMD_LLM_MODEL", fallback="")
+        self.NMD_LLM_BASE_URL = self._config.get("llm", "NMD_LLM_BASE_URL", fallback="")
         self.NMD_LLM_TIMEOUT = self._getint("llm", "NMD_LLM_TIMEOUT", 60)
         self.NMD_LLM_MAX_RETRIES = self._getint("llm", "NMD_LLM_MAX_RETRIES", 3)
         self.NMD_LLM_EXTRACTOR = self._getbool("llm", "NMD_LLM_EXTRACTOR")
+        self.NMD_LLM_EXTRACTOR_LENIENT = self._getbool("llm", "NMD_LLM_EXTRACTOR_LENIENT")
         self.NMD_LLM_THINKING = self._getbool("llm", "NMD_LLM_THINKING")
 
     def _load_lifecycle(self):

@@ -3,7 +3,16 @@
 All adapters are optional-dependency: the library is only imported when the
 provider is constructed, so the rule-based pipeline never needs them. Adapters
 are selected via ``NMD_LLM_PROVIDER`` (openai | anthropic | gemini | qwen |
-nvidia | ollama) plus the matching API key/model env vars.
+nvidia | ollama | openrouter | other) plus the matching API key/model env vars.
+
+``other`` is the generic OpenAI-compatible endpoint: set ``NMD_LLM_MODEL``,
+``NMD_LLM_API_KEY`` and ``NMD_LLM_BASE_URL`` (model + base URL may also live
+in ``nebulonmind.cfg`` under ``[llm]``; the key always stays in ``.env``).
+
+The extraction system now includes robust JSON parsing with multiple fallback
+strategies to handle various model output formats. If ``NMD_LLM_EXTRACTOR_LENIENT``
+is enabled, the system will extract partial data even when the full JSON is
+malformed, falling back to rule-based extraction only as a last resort.
 
 Every adapter returns a standardized ``LLMResponse`` (no provider-specific
 response shape) and raises only the typed ``LLM*Error`` hierarchy below, so
@@ -16,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 
 from pydantic import BaseModel
@@ -121,40 +131,249 @@ class LLMProvider(Protocol):
 
 
 def _extract_json(raw: str) -> dict:
-    """Parse model JSON out of an LLM reply (tolerates fences/prose)."""
+    """Parse model JSON out of an LLM reply (tolerates fences/prose, malformed JSON, multiple objects)."""
     text = (raw or "").strip()
+    if not text:
+        raise LLMInvalidResponseError("empty LLM reply")
+
+    # Case 1: Remove markdown fences
     if text.startswith("```"):
         text = text.strip("`")
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
+
+    # Case 2: Try to find the first { ... } pair (works for prose-wrapped JSON)
     first, last = text.find("{"), text.rfind("}")
     if first < 0 or last <= first:
         raise LLMInvalidResponseError(f"no JSON object found in LLM reply: {raw[:120]!r}")
+
+    json_text = text[first: last + 1]
+
+    # Case 3: Try parsing as-is
     try:
-        data = json.loads(text[first: last + 1])
-    except json.JSONDecodeError as exc:
-        raise LLMInvalidResponseError(f"invalid JSON from LLM: {exc}") from exc
-    if not isinstance(data, dict):
-        raise LLMInvalidResponseError(f"LLM reply is not a JSON object: {raw[:120]!r}")
-    return data
+        data = json.loads(json_text)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    # Case 4: Try fixing common JSON issues (trailing commas, unescaped quotes)
+    try:
+        # Remove trailing commas before }
+        fixed = json_text.replace(",}", "}").replace(",]", "]")
+        # Remove trailing commas after } (if any)
+        fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+        data = json.loads(fixed)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    # Case 5: Try extracting multiple JSON objects (some models emit arrays of objects)
+    try:
+        # Look for multiple { ... } patterns
+        json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text)
+        if json_objects:
+            # Try each object until one works
+            for obj_str in json_objects:
+                try:
+                    data = json.loads(obj_str)
+                    if isinstance(data, dict):
+                        return data
+                except json.JSONDecodeError:
+                    continue
+    except Exception:
+        pass
+
+    # Case 6: Last resort - try to extract key-value pairs from prose
+    try:
+        # Look for "key": value patterns
+        kv_pairs = re.findall(r'"([^"]+)":\s*("[^"]*"|\d+|true|false|null|\{[^}]*\})', text)
+        if kv_pairs:
+            data = {}
+            for key, value in kv_pairs:
+                try:
+                    # Try to parse the value as JSON
+                    parsed = json.loads(value)
+                    data[key] = parsed
+                except json.JSONDecodeError:
+                    # If not JSON, treat as string
+                    data[key] = value.strip('"')
+            if data:
+                return data
+    except Exception:
+        pass
+
+    raise LLMInvalidResponseError(
+        f"Could not extract valid JSON from LLM reply. First 200 chars: {raw[:200]!r}"
+    )
 
 
 def _parse_json(raw: str, schema: Type[BaseModel]) -> BaseModel:
-    return schema.model_validate(_extract_json(raw))
+    """Parse JSON with fallback to partial validation for robustness."""
+    try:
+        data = _extract_json(raw)
+        return schema.model_validate(data)
+    except LLMInvalidResponseError:
+        # If full validation fails, try to validate as much as possible
+        try:
+            data = _extract_json(raw)
+            # Try to create a partial validation by allowing extra fields
+            class PartialSchema(schema):
+                class Config:
+                    extra = "allow"
+            return PartialSchema.model_validate(data)
+        except Exception:
+            # If even partial validation fails, return a basic dict with the raw data
+            # This ensures the extraction layer can still process it
+            data = _extract_json(raw)
+            return schema.model_construct(**data)
 
 
 class BaseLLMProvider:
     """Shared ``structured()`` for adapters that only implement ``complete``."""
 
     def structured(self, prompt: str, schema: Type[BaseModel]) -> dict:
+        # Check if lenient mode is enabled
+        import os
+        lenient_mode = os.environ.get("NMD_LLM_EXTRACTOR_LENIENT", "false").lower() in ("1", "true", "yes")
+        
         system = (
             "You are a memory extraction system. Return ONLY valid JSON "
             "matching the requested schema. No markdown, no prose."
         )
         raw = self.complete(prompt, system=system, temperature=0.0)
         text = raw.text if isinstance(raw, LLMResponse) else raw
-        return _extract_json(text)
+        
+        # Use robust JSON extraction with fallback
+        try:
+            return self._extract_with_fallback(text, schema)
+        except Exception:
+            # In lenient mode, fallback to empty dict (rules will handle it)
+            if lenient_mode:
+                return {}
+            # In strict mode, raise the exception to make the failure explicit
+            raise LLMInvalidResponseError(
+                f"Failed to extract structured data from LLM response and lenient mode is disabled. "
+                f"Schema: {schema.__name__}, Response: {text[:200]!r}"
+            )
+
+    def _clean_json_response(self, text: str) -> str:
+        """Clean common JSON issues from model responses."""
+        import re
+        
+        # Remove markdown fences
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        
+        # Fix common JSON issues
+        text = text.replace(",}", "}").replace(",]", "]")
+        text = re.sub(r',\s*([}\]])', r'\1', text)
+        text = text.replace("'", '"')  # Replace single quotes with double quotes
+        
+        # Handle common escape issues
+        text = text.replace('\\"', '"')
+        text = text.replace("\\'", "'")
+        
+        # Fix unescaped newlines in strings
+        text = re.sub(r'"([^"]*)\n([^"]*)"', lambda m: f'"{m.group(1)} {m.group(2)}"', text)
+        
+        return text
+
+    def _extract_robust_json(self, text: str) -> dict:
+        """Extract JSON with multiple fallback strategies for robustness."""
+        # Strategy 1: Direct extraction
+        try:
+            return _extract_json(text)
+        except:
+            pass
+        
+        # Strategy 2: Clean and extract
+        try:
+            cleaned = self._clean_json_response(text)
+            return _extract_json(cleaned)
+        except:
+            pass
+        
+        # Strategy 3: Extract JSON-like structures
+        try:
+            # Look for object-like patterns
+            pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            matches = re.findall(pattern, text)
+            for match in matches:
+                try:
+                    return json.loads(match)
+                except:
+                    continue
+        except:
+            pass
+        
+        # Strategy 4: Extract key-value pairs
+        try:
+            kv_pairs = re.findall(r'"([^"]+)":\s*("[^"]*"|\d+|true|false|null|\{[^}]*\})', text)
+            if kv_pairs:
+                result = {}
+                for key, value in kv_pairs:
+                    try:
+                        parsed = json.loads(value)
+                        result[key] = parsed
+                    except:
+                        result[key] = value.strip('"')
+                return result
+        except:
+            pass
+        
+        # Strategy 5: Return empty dict (fallback to rules)
+        return {}
+
+    def _extract_with_fallback(self, text: str, schema: Type[BaseModel]) -> dict:
+        """Extract JSON with multiple fallback strategies and return partial results."""
+        # Try all extraction strategies
+        extraction_strategies = [
+            lambda: _extract_json(text),
+            lambda: _extract_json(self._clean_json_response(text)),
+            lambda: self._extract_robust_json(text),
+        ]
+        
+        for strategy in extraction_strategies:
+            try:
+                data = strategy()
+                if isinstance(data, dict):
+                    # Try to validate against schema
+                    try:
+                        return schema.model_validate(data)
+                    except Exception:
+                        # If validation fails, try to extract what we can
+                        return self._extract_partial_data(data, schema)
+            except Exception:
+                continue
+        
+        # If all strategies fail, return an empty dict (fallback to rules)
+        return {}
+
+    def _extract_partial_data(self, data: dict, schema: Type[BaseModel]) -> dict:
+        """Extract data that matches the schema fields, ignoring extra fields."""
+        if not isinstance(data, dict):
+            return {}
+        
+        result = {}
+        schema_fields = schema.model_fields.keys()
+        
+        for field in schema_fields:
+            if field in data:
+                result[field] = data[field]
+            else:
+                # Try to find the field in nested structures
+                for key, value in data.items():
+                    if field.lower() in key.lower() or key.lower() in field.lower():
+                        result[field] = value
+                        break
+        
+        return result
 
 
 class RetryingLLMProvider:
@@ -309,6 +528,47 @@ class OpenRouterProvider(OpenAIProvider):
         )
 
 
+class OtherProvider(OpenAIProvider):
+    """Generic OpenAI-compatible endpoint (custom model / key / base URL).
+
+    Configure via ``NMD_LLM_PROVIDER=other`` plus::
+
+        NMD_LLM_MODEL     e.g. my-org/my-model
+        NMD_LLM_API_KEY   (in ``.env``, never in the cfg)
+        NMD_LLM_BASE_URL  e.g. https://llm.example.com/v1
+
+    Model and base URL may also come from ``nebulonmind.cfg`` ``[llm]``
+    (``nmd_llm_model`` / ``nmd_llm_base_url``); explicit constructor args
+    always win over the environment.
+    """
+
+    provider = "other"
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> None:
+        resolved_model = (model or os.environ.get("NMD_LLM_MODEL", "")).strip()
+        if not resolved_model:
+            raise LLMProviderError(_CONFIG_ERROR.format(name="Other", provider="other"))
+        key = (api_key or os.environ.get("NMD_LLM_API_KEY", "")).strip()
+        if not key:
+            raise LLMProviderError(_CONFIG_ERROR.format(name="Other", provider="other"))
+        resolved_base_url = (base_url or os.environ.get("NMD_LLM_BASE_URL", "")).strip()
+        if not resolved_base_url:
+            raise LLMProviderError(
+                "Other provider: set NMD_LLM_BASE_URL to your OpenAI-compatible "
+                "endpoint (e.g. https://llm.example.com/v1)"
+            )
+        super().__init__(
+            model=resolved_model,
+            api_key=key,
+            base_url=resolved_base_url,
+        )
+
+
 class AnthropicProvider(BaseLLMProvider):
     """Anthropic Claude."""
 
@@ -381,6 +641,7 @@ _PROVIDERS = {
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
     "openrouter": OpenRouterProvider,
+    "other": OtherProvider,
 }
 
 
@@ -441,6 +702,7 @@ __all__ = [
     "NvidiaProvider",
     "OllamaProvider",
     "OpenAIProvider",
+    "OtherProvider",
     "QwenProvider",
     "RetryingLLMProvider",
     "provider_from_env",

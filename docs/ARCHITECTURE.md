@@ -181,7 +181,7 @@ Conversation ──► MemoryDecisionEngine ──► validated MemoryDecisions
 | `converter.py` | `candidate_to_memory()` — the only place decision output meets the `Memory` model |
 | `validation.py` | per-item sanitization: parse, drop empty/out-of-range/invalid, fix entities, dedupe |
 | `bridge.py` | `MemoryIntelligence` facade: conversation → decisions → store; accepts a repository or a `NebulonMind` |
-| `providers.py` | `LLMProvider` protocol; OpenAI / Anthropic / Gemini / Qwen / Ollama adapters; `provider_from_env()` |
+| `providers.py` | `LLMProvider` protocol; OpenAI / Anthropic / Gemini / Qwen / Nvidia / Ollama / OpenRouter / Other adapters; `provider_from_env()` |
 
 The extraction engine is pure — no storage, no network. Persistence is the
 bridge's job. Extraction never requires an LLM: the rule-based extractor is
@@ -378,14 +378,32 @@ bodies by default.
 
 `nmd_host/intelligence/providers.py` defines one `LLMProvider` protocol
 (`complete` / `structured` → `LLMResponse{text, provider}`) and swappable,
-optional-dependency adapters — OpenAI, Ollama, Qwen, Anthropic, Gemini —
-selected via `NMD_LLM_PROVIDER`. Adapters never leak SDK-specific shapes and
-raise only the typed `LLM*Error` hierarchy (`LLMTimeoutError`,
-`LLMRateLimitError`, `LLMTokenLimitError`, `LLMUnavailableError`,
-`LLMInvalidResponseError`), classified from SDK exceptions by type
-name/message. `provider_from_env()` wraps the adapter in a bounded,
-exponential-backoff `RetryingLLMProvider` on rate limits
+optional-dependency adapters — OpenAI, Ollama, Qwen, Nvidia, Anthropic,
+Gemini, OpenRouter, Other — selected via `NMD_LLM_PROVIDER`. Adapters never
+leak SDK-specific shapes and raise only the typed `LLM*Error` hierarchy
+(`LLMTimeoutError`, `LLMRateLimitError`, `LLMTokenLimitError`,
+`LLMUnavailableError`, `LLMInvalidResponseError`), classified from SDK
+exceptions by type name/message. `provider_from_env()` wraps the adapter in a
+bounded, exponential-backoff `RetryingLLMProvider` on rate limits
 (`NMD_LLM_MAX_RETRIES`).
+
+`other` is the generic OpenAI-compatible endpoint for any custom model host:
+set `NMD_LLM_PROVIDER=other` with `NMD_LLM_MODEL`, `NMD_LLM_API_KEY` and
+`NMD_LLM_BASE_URL`. Model and base URL may also live in `nebulonmind.cfg`
+under `[llm]` (`nmd_llm_model` / `nmd_llm_base_url`); the API key always stays
+in `.env`, never in the cfg:
+
+```ini
+# nebulonmind.cfg [llm]
+nmd_llm_provider = other
+nmd_llm_model = my-org/my-model
+nmd_llm_base_url = https://llm.example.com/v1
+```
+
+```bash
+# .env
+NMD_LLM_API_KEY=sk-...
+```
 
 Both the extraction layer and the agent reuse this single provider —
 extraction via `NMD_LLM_PROVIDER`/`NMD_LLM_MODEL`, the agent via the same
@@ -554,7 +572,8 @@ Configuration is environment-driven from `.env` (see `nmd_host/core/config.py`).
   `NMD_EXPECTED_BACKEND_VERSION`, `NMD_API_WORKERS`,
   `NMD_API_GRACEFUL_SHUTDOWN_SECONDS`.
 * **LLM** — `NMD_LLM_PROVIDER`, `NMD_LLM_API_KEY`, `NMD_LLM_MODEL`,
-  `NMD_LLM_TIMEOUT`, `NMD_LLM_MAX_RETRIES`.
+  `NMD_LLM_BASE_URL` (required for `NMD_LLM_PROVIDER=other`), `NMD_LLM_TIMEOUT`,
+  `NMD_LLM_MAX_RETRIES`.
 * **Agent** — `NMD_AGENT_MODEL`, `NMD_AGENT_MAX_TURNS`, `NMD_AGENT_MAX_RECALL`,
   `NMD_AGENT_TEMPERATURE`, `NMD_AGENT_MAX_SESSIONS`,
   `NMD_AGENT_SESSION_TTL_SECONDS`, `NMD_AGENT_SYSTEM_PROMPT`.

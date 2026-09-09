@@ -41,7 +41,9 @@ stay public). Isolation is data partitioning, not security; protect the port you
 
 Use NebulonMind's own tool-calling runtime. It grounds the answer in stored
 memory, and can `remember` / `recall` context on its own. Requires an LLM
-provider (`NMD_LLM_PROVIDER` + matching key/model).
+provider (`NMD_LLM_PROVIDER` + matching key/model; use `other` with
+`NMD_LLM_BASE_URL` for any custom OpenAI-compatible endpoint — see
+[ARCHITECTURE.md](ARCHITECTURE.md) "LLM providers").
 
 ```bash
 curl -X POST 'http://localhost:9696/api/NebulonMind/agent/chat?user_id=my_agent' \

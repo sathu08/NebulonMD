@@ -115,7 +115,7 @@ The project is organized into several logical layers:
 | `nmd_host/intelligence/converter.py` | `MemoryCandidate → Step 1 Memory` conversion (populates `Memory` model fields). |
 | `nmd_host/intelligence/bridge.py` | `MemoryIntelligence` facade – `process(conversation)` → list of `MemoryCandidate`s, using either the rule extractor or the LLM extractor. |
 | `nmd_host/intelligence/validation.py` | Drops malformed / hallucinated decisions before they reach storage. |
-| `nmd_host/intelligence/providers.py` | `LLMProvider` protocol + concrete adapters: `OpenAIProvider`, `OllamaProvider`, `NvidiaProvider`, `QwenProvider`, `AnthropicProvider`, `GeminiProvider`, `RetryingLLMProvider`. |
+| `nmd_host/intelligence/providers.py` | `LLMProvider` protocol + concrete adapters: `OpenAIProvider`, `OllamaProvider`, `NvidiaProvider`, `QwenProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenRouterProvider`, `OtherProvider`, `RetryingLLMProvider`. |
 | `nmd_host/intelligence/engine.py` | `MemoryDecisionEngine` – receives a `Conversation`, returns a `List[MemoryDecision]`. |
 | `nmd_host/intelligence/schemas.py` | Pydantic models: `Conversation`, `Turn`, `MemoryCandidate`, `MemoryDecision`, `MemoryCategory` (enum). |
 | `nmd_host/lifecycle/config.py` | `LifecycleConfig` – env‑driven flags (`NMD_LIFECYCLE_AUTO_CLEANUP`, retention‑policy defaults). The scheduled auto-delete cron is read by `core/config.py` as `NMD_LIFECYCLE_AUTO_CLEANUP_CRON` (default from `utils/constants.AUTO_DELETE_CRON_DEFAULT`). |
