@@ -65,7 +65,7 @@ class _FakeBackend:
             if r["corpus"] == corpus and r["segment"] == segment
         ]
 
-    def load_segment(self, corpus, segment, ndb_type, records, set_columns=None, is_precomputed=None, lang_type=None, doc_type=None, lang=None):
+    def load_segment(self, corpus, segment, ndb_type, records, set_columns=None, is_precomputed=None, lang_type=None, doc_type=None, lang=None, metadata=None):
         loaded: list = []
         for record in records:
             self._next_id += 1
@@ -303,7 +303,7 @@ def test_store_compensates_when_vector_write_fails(monkeypatch):
         entities=["Sathya"],
     )
 
-    def boom(memory_id, text):
+    def boom(memory_id, text, metadata=None, *extra):
         raise RuntimeError("vector exploded")
 
     monkeypatch.setattr(mind.vector, "update", boom)

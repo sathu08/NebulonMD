@@ -32,7 +32,6 @@ venv/
 dist/
 build/
 *.egg-info/
-chat_history/
 
 # ===============================
 # Generated artifacts

@@ -44,37 +44,14 @@ class TruthStore:
             raise ValueError("Truth doc must contain 'memory_id'")
         self.delete(memory_id)
         
-        # Extract lang and type from the document
+        # Extract lang and type from the document.
+        # doc_type is free-form on the backend and stored verbatim, so the
+        # value sent here is exactly what the dashboard shows: "chat_memory"
+        # for memories, "doc" for uploaded documents.
         classification = doc.get("classification", {})
         lang = classification.get("lang", "en")
-        category = classification.get("category", "general")
         memory_type = classification.get("memory_type", "semantic")
-        # Map memory_type/category to valid DocumentType (NebulonDB requirement)
-        # NebulonDB only accepts certain document types (chat, other, etc.)
-        # "doc" memory_type is stored internally but mapped to "other" for NebulonDB
-        if memory_type == "doc":
-            type_ = "other"
-        else:
-            doc_type_map = {
-                "general": "chat",
-                "identity": "chat",
-                "preference": "chat",
-                "skill": "chat",
-                "goal": "chat",
-                "project": "chat",
-                "fact": "chat",
-                "event": "chat",
-                "task": "chat",
-                "opinion": "chat",
-                "knowledge": "chat",
-                # Additional mappings to ensure all categories are covered
-                "working": "chat",
-                "short_term": "chat",
-                "long_term": "chat",
-                "episodic": "chat",
-                "semantic": "chat",
-            }
-            type_ = doc_type_map.get(category, "chat")  # Default to "chat" instead of "other"
+        type_ = "doc" if memory_type == "doc" else "chat_memory"
         
         self._api.load_segment(
             self.CORPUS,

@@ -86,7 +86,7 @@ def test_recall_graph_expansion(api_client, unique_user):
 def test_store_rollback_on_vector_failure(api_client, unique_user, monkeypatch):
     mind = build_mind(unique_user, api_client)
 
-    def boom(memory_id, text):
+    def boom(memory_id, text, metadata=None, *extra):
         raise RuntimeError("vector exploded")
 
     monkeypatch.setattr(mind.vector, "update", boom)

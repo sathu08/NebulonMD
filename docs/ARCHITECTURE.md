@@ -108,9 +108,10 @@ segment per user (`user_{user_id}`) for multi-tenant isolation.
 
 | Store | Corpus | Engine | What it holds |
 |---|---|---|---|
-| `TruthStore` | `mind_truth` | cosmos | One document per memory; the full `Memory` JSON lives in the `text` column (the engine only persists `{text, lang, type, created_at}` and assigns its own integer `_id`), so reads scan the segment, parse JSON and match on `memory_id`. |
-| `VectorStore` | `mind_semantic` | orbit | One embedding per memory, computed server-side (`is_precomputed=False`); the record's label carries the `memory_id`. |
+| `TruthStore` | `mind_truth` | cosmos | One document per memory; the full `Memory` JSON lives in the `text` column with `doc_type=chat_memory` (`doc` for uploads), so reads scan the segment, parse JSON and match on `memory_id`. |
+| `VectorStore` | `mind_semantic` | orbit | One embedding per memory, computed server-side (`is_precomputed=False`); the record's label carries the `memory_id`, plus caller extras (`memory_id`, `category`). |
 | `GraphStore` | `mind_semantic` | orbit Mesh | Entities as nodes (auto-resolved by label); each memory is a node linked to its entities via `HAS_ENTITY`; user relationships become directed entity → entity edges. Writes are idempotent. |
+| `ChatHistoryStore` | `mind_chats` | cosmos | One document per chat transcript (`doc_type=chat_history`), COSMOS-only — never embedded, so raw chit-chat can't pollute semantic recall. Backs `/chats`; `/agent/chat` auto-saves session transcripts best-effort. |
 
 Reads for the graph are *derived from the truth store* (the API exposes no
 label → node resolution), so `delete_memory` is a no-op: deleting a memory's

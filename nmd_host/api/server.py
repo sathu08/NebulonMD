@@ -1148,6 +1148,22 @@ def create_app(
             app.state.sessions.append_messages(
                 resolved_user, session.session_id, data.transcript
             )
+        # Auto-save the transcript into the DB chat history (best-effort):
+        # session/conversation-scoped API chats share one history record
+        # (id = session_id) visible under /chats. Console chats carry no
+        # session_id and keep their own POST /chats saves — no duplicates.
+        # A history failure never fails the chat response.
+        chat_key = request.session_id or request.conversation_id
+        if chat_key and data.transcript:
+            try:
+                from ..stores.chat_history_store import history_store_for, transcript_to_chat
+                history_store_for(provider, user_id).save(
+                    transcript_to_chat(chat_key, user_id, data.transcript)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "agent chat history auto-save failed for %s: %s", user_id, exc
+                )
         return AgentChatEnvelope(message="agent replied", data=data)
 
     # ------------------------------------------------------------------ #

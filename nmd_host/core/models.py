@@ -143,25 +143,8 @@ class Memory(BaseModel):
         if classification.get("lang"):
             doc["lang"] = classification["lang"]
         memory_type = classification.get("memory_type", "semantic")
-        category = classification.get("category", "general")
-        # Map to NebulonDB document type
-        if memory_type == "doc":
-            doc["type"] = "doc"
-        else:
-            doc_type_map = {
-                "general": "chat",
-                "identity": "chat",
-                "preference": "chat",
-                "skill": "chat",
-                "goal": "chat",
-                "project": "chat",
-                "fact": "chat",
-                "event": "chat",
-                "task": "chat",
-                "opinion": "chat",
-                "knowledge": "chat",
-            }
-            doc["type"] = doc_type_map.get(category, "other")
+        # Display type mirrors the doc_type sent to NebulonDB verbatim.
+        doc["type"] = "doc" if memory_type == "doc" else "chat_memory"
         return doc
 
     @classmethod

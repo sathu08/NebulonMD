@@ -92,9 +92,10 @@ The project is organized into several logical layers:
 | `nmd_host/core/models.py` | Pydantic models: `Memory`, `MemoryContent`, `Classification`, `Importance`, `RetentionPolicy`, `MemoryStatus`, `Lifecycle`, `Relationship`, `Provenance`. |
 | `nmd_host/core/repository.py` | `MemoryRepository` protocol + `InMemoryRepository` (fake for tests) + `NebulonMindRepository` (wraps the API). |
 | `nmd_host/core/mind.py` | `NebulonMind` facade – `store(memory)`, `recall(query, top_k)`, `relate(memory_id, entity)`, `delete(memory_id)`, `user/create_user`. |
-| `nmd_host/stores/truth_store.py` | `TruthStore` – API‑backed wrapper → COSMOS corpus `mind_truth`. `insert`, `get`, `update`, `delete`, `search`. |
-| `nmd_host/stores/vector_store.py` | `VectorStore` – API‑backed wrapper → ORBIT corpus `mind_semantic`. `insert_vec`, `search`, `delete`. Embeddings computed server‑side (`is_precomputed=False`). |
+| `nmd_host/stores/truth_store.py` | `TruthStore` – API‑backed wrapper → COSMOS corpus `mind_truth` (`doc_type=chat_memory`). `insert`, `get`, `update`, `delete`, `search`. |
+| `nmd_host/stores/vector_store.py` | `VectorStore` – API‑backed wrapper → ORBIT corpus `mind_semantic` (`doc_type=chat_memory`). `insert_vec`, `search`, `delete`. Embeddings computed server‑side (`is_precomputed=False`); caller extras (`memory_id`, `category`) stored as metadata. |
 | `nmd_host/stores/graph_store.py` | `GraphStore` – ORBIT Mesh wrapper. `add_edge`, `remove_edge`, `get_neighbors`, entity resolution by label. |
+| `nmd_host/stores/chat_history_store.py` | `ChatHistoryStore` / `InMemoryChatHistoryStore` – chat transcripts → COSMOS corpus `mind_chats` (`doc_type=chat_history`, COSMOS-only, never embedded). `history_store_for()` + `transcript_to_chat()` helpers. |
 | `nmd_host/agent/config.py` | `AgentConfig` – reads `NMD_AGENT_MAX_SESSIONS`, `NMD_AGENT_SESSION_TTL_SECONDS`, `NMD_AGENT_DURABLE_SESSIONS`. |
 | `nmd_host/agent/session.py` | `AgentSession` (Pydantic model) + `AgentSessionManager` – in‑process session registry, TTL, optional `store` (durable NebulonDB-backed). Step 1 change: warnings before `ValueError` raises. |
 | `nmd_host/agent/session_store.py` | `NebulonDBSessionStore` – persists sessions to NebulonDB corpus `mind_sessions`; best‑effort durability. |
