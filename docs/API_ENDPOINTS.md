@@ -137,6 +137,11 @@ POST /memory
 ```
 Persist a memory across truth, meaning, and relationship stores.
 
+**`memory_type` → NebulonDB `doc_type` mapping** (stored verbatim, exactly as
+the dashboard shows it): `doc` → `doc`, every other `memory_type` →
+`chat_memory`. `lang` defaults to `en`. Never send chat text with a document
+type — `doc`/`pdf` tags mean file origin and earn a retrieval boost.
+
 **Request:**
 ```json
 {
@@ -212,6 +217,59 @@ Partially update a memory (only provided fields are replaced).
 DELETE /memory/{memory_id}
 ```
 Delete a memory (deletes in reverse write order: graph → vector → truth).
+
+#### 3.5 Store Document Pages (PDF Upload Pattern)
+```http
+POST /memory?gate=true
+```
+External converters (PDF → text lives **outside** NebulonMind) push **one
+request per page** through the regular Store Memory endpoint — no special
+upload API exists. Each page becomes a searchable `doc` memory; add one
+extra request holding the whole-document summary.
+
+**Request (one page):**
+```json
+{
+  "user_id": "nmd_user_01",
+  "content": {
+    "text": "<page 3 extracted text>",
+    "summary": "<one-line summary of page 3>",
+    "structured_data": {"filename": "manual.pdf", "page": 3, "total_pages": 40}
+  },
+  "classification": {"memory_type": "doc", "category": "knowledge",
+                     "source": "manual.pdf", "lang": "en"},
+  "lifecycle": {"retention_policy": "permanent"}
+}
+```
+
+**Field guide:**
+
+| Field | Purpose |
+|---|---|
+| `content.text` | The extracted page text (required, non-empty) |
+| `content.summary` | One-line page summary (listings, dedupe signals) |
+| `content.structured_data` | Free-form dict, stored verbatim — `filename`, `page`, `total_pages` |
+| `classification.source` | Filename — surfaces as `source:` in recall context so answers cite it |
+| `memory_type: doc` | Stored with `doc_type=doc` (keep `gate=true`: re-uploads return `DUPLICATE` instead of doubling) |
+
+**Whole-document summary (one extra request):** same shape, `text` = full-document
+summary, `structured_data: {"filename": "manual.pdf", "kind": "document_summary"}`.
+
+**Q&A follow-up:** ask via `POST /agent/chat` (or `GET /search`) — recall context
+carries `source: manual.pdf`, so answers cite the file. Keep pages under ~50k
+chars; upload order does not matter; re-running is idempotent.
+
+```bash
+curl -X POST "http://localhost:9696/api/NebulonMind/memory?user_id=nmd_user_01&gate=true" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "nmd_user_01",
+       "content": {"text": "Page 3: install with pip install nebulonmind.",
+                   "summary": "Installation command",
+                   "structured_data": {"filename": "manual.pdf", "page": 3, "total_pages": 40}},
+       "classification": {"memory_type": "doc", "category": "knowledge",
+                          "source": "manual.pdf", "lang": "en"},
+       "lifecycle": {"retention_policy": "permanent"}}'
+```
 
 ---
 
