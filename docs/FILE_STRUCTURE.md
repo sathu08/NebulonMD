@@ -173,9 +173,9 @@ The project is organized into several logical layers:
 | `NMD_LLM_EXTRACTOR` | `false` – when `true`, the LLM extractor is used; extractions falling back to the rules engine on failure or empty payload. |
 | `NMD_RANKING_SEMANTIC_WEIGHT`, `NMD_RANKING_IMPORTANCE_WEIGHT`, `NMD_RANKING_CONFIDENCE_WEIGHT`, `NMD_RANKING_RECENCY_WEIGHT` | Ranking‑engine weights (must sum to `1.0`). |
 | `NMD_CONTEXT_MAX_ITEMS`, `NMD_CONTEXT_MAX_CHARACTERS` | Bounded LLM‑context size. |
-| `NMD_TEMPORARY_TTL_SECONDS` | Default `30` days for `TEMPORARY` memories (also in `nebulonmind.cfg` `[lifecycle]`). |
+| `NMD_TEMPORARY_TTL_SECONDS` | Default `30` days for `TEMPORARY` memories (also in `nebulonmd.cfg` `[lifecycle]`). |
 | `NMD_LIFECYCLE_AUTO_CLEANUP` | `false` – when `true`, the scheduled `auto_delete_expired` background job deletes expired memories. |
-| `NMD_LIFECYCLE_AUTO_CLEANUP_CRON` | `0 3 * * *` – cron for the auto-delete sweep (5-field; set in `nebulonmind.cfg` `[lifecycle] nmd_lifecycle_auto_cleanup_cron`). |
+| `NMD_LIFECYCLE_AUTO_CLEANUP_CRON` | `0 3 * * *` – cron for the auto-delete sweep (5-field; set in `nebulonmd.cfg` `[lifecycle] nmd_lifecycle_auto_cleanup_cron`). |
 | `NMD_AGENT_MAX_SESSIONS` | `100` – max sessions per user. |
 | `NMD_AGENT_SESSION_TTL_SECONDS` | `3600` – session TTL in seconds. |
 | `NMD_API_CORS_ORIGINS` | `http://localhost:8000,http://127.0.0.1:8000` (adjust for production). |

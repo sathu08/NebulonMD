@@ -650,7 +650,7 @@ class NebulonMindApp(App):
             "agent",
             f"User `{username}` "
             + ("created. " if created else "already existed. ")
-            + f"Now chatting as `{username}` (saved to nebulonmind.cfg).",
+            + f"Now chatting as `{username}` (saved to nebulonmd.cfg).",
         )
         self.refresh_status()
         self._refresh_subtitle()
@@ -673,7 +673,7 @@ class NebulonMindApp(App):
     # ------------------------------------------------------------------ #
 
     def _open_config_editor(self) -> None:
-        """Open the nebulonmind.cfg editor (reads/writes through the API)."""
+        """Open the nebulonmd.cfg editor (reads/writes through the API)."""
         if not server_ops.server_status()[0]:
             self.notify("NebulonMind server is not running.", severity="warning")
             return
@@ -743,7 +743,7 @@ class NebulonMindApp(App):
         self.refresh_status()
         self._refresh_subtitle()
         self._append_message(
-            "agent", f"Now chatting as existing user `{username}` (saved to nebulonmind.cfg)."
+            "agent", f"Now chatting as existing user `{username}` (saved to nebulonmd.cfg)."
         )
         self._end_user_flow()
 

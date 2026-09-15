@@ -12,13 +12,13 @@ from nmd_host.api.service import InMemoryServiceProvider
 from nmd_host.core.config import ServiceConfig, _load_cfg
 
 _REPO = Path(__file__).resolve().parents[1]
-REAL_CFG = (_REPO / "nebulonmind.cfg").read_text(encoding="utf-8")
+REAL_CFG = (_REPO / "nebulonmd.cfg").read_text(encoding="utf-8")
 
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     monkeypatch.setenv("NEBULONMD_HOME", str(tmp_path))
-    cfg_path = tmp_path / "nebulonmind.cfg"
+    cfg_path = tmp_path / "nebulonmd.cfg"
     cfg_path.write_text(REAL_CFG, encoding="utf-8")
     monkeypatch.setattr(config_routes, "CFG_FILE", cfg_path)
     _load_cfg(cfg_path, override=True)

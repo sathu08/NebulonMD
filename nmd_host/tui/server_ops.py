@@ -97,7 +97,7 @@ def wait_until(predicate, attempts: int = 12, interval: float = 1.0) -> bool:
 
 
 # ==========================================================
-#  nebulonmind.cfg (via the API — same source the website uses)
+#  nebulonmd.cfg (via the API — same source the website uses)
 # ==========================================================
 
 def config_url(path: str = "cfg") -> str:
@@ -106,7 +106,7 @@ def config_url(path: str = "cfg") -> str:
 
 
 def fetch_config() -> Tuple[bool, dict]:
-    """Fetch the grouped ``nebulonmind.cfg`` settings via the API.
+    """Fetch the grouped ``nebulonmd.cfg`` settings via the API.
 
     Returns ``(ok, data)`` where ``data`` is the API ``data`` block
     (``groups: [{id, title, description, keys: [...]}]``) on success,
@@ -125,7 +125,7 @@ def fetch_config() -> Tuple[bool, dict]:
 
 
 def save_config(updates: dict) -> Tuple[bool, str]:
-    """Persist ``{section: {key: value}}`` updates to nebulonmind.cfg via the API."""
+    """Persist ``{section: {key: value}}`` updates to nebulonmd.cfg via the API."""
     if not updates:
         return False, "No changes to save."
     try:

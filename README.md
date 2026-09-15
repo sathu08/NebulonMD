@@ -112,7 +112,7 @@ NEBULONDB_PASSWORD=...
 > Provider keys are never written to the cfg file. Get a free NVIDIA NIM key at
 > <https://build.nvidia.com> — any OpenAI-compatible provider also works.
 
-### `nebulonmind.cfg` — everything else
+### `nebulonmd.cfg` — everything else
 
 | Section | Key | Default | Purpose |
 |---|---|---|---|

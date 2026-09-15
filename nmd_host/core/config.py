@@ -5,7 +5,7 @@ NebulonMind Configuration
 This module handles configuration settings for the NebulonMind API.
 It mirrors ``NebulonDB``'s ``ndb_host/db/ndb_settings.py``:
 
-* Loads operational settings from a config file (default: ``nebulonmind.cfg``).
+* Loads operational settings from a config file (default: ``nebulonmd.cfg``).
 * Supports an explicit home override via the ``NEBULONMD_HOME`` environment
   variable (the NebulonMind equivalent of ``NEBULONDB_HOME``).
 * Safely resolves variables using ``string.Template`` and ``os.path.expandvars``.
@@ -259,7 +259,7 @@ class NMDConfig:
     """
     NebulonMind Configuration Loader
 
-    Loads configuration from a specified config file (default: `nebulonmind.cfg`),
+    Loads configuration from a specified config file (default: `nebulonmd.cfg`),
     supports environment overrides, safely resolves variables using
     string.Template and os.path.expandvars.
     """
@@ -271,11 +271,11 @@ class NMDConfig:
         Args:
             config_path (str): Path to the configuration file. When ``None``,
                 resolves ``NEBULONMD_HOME`` (falling back to the repository
-                root derived from this file) and reads ``nebulonmind.cfg``.
+                root derived from this file) and reads ``nebulonmd.cfg``.
         """
         if config_path is None:
             nmd_home = os.environ.get("NEBULONMD_HOME", _repo_root())
-            config_path = Path(nmd_home) / "nebulonmind.cfg"
+            config_path = Path(nmd_home) / "nebulonmd.cfg"
         else:
             config_path = Path(config_path)
 
@@ -427,7 +427,7 @@ class NMDConfig:
                 if key.upper() in _SECRET_KEYS:
                     raise ValueError(
                         f"'{section}.{key}' is a secret — keep it in .env, "
-                        "not nebulonmind.cfg"
+                        "not nebulonmd.cfg"
                     )
                 self._config.set(section, key, str(value).strip())
                 updated.append(f"{section}.{key}={value}")
@@ -435,7 +435,7 @@ class NMDConfig:
         return updated
 
     def set_background_user(self, username: str) -> None:
-        """Persist the active conversation username to ``nebulonmind.cfg``.
+        """Persist the active conversation username to ``nebulonmd.cfg``.
 
         Writes ``NMD_BACKGROUND_USER`` in the ``[background]`` section so the
         next TUI/server launch defaults to the same user.
@@ -634,7 +634,7 @@ def _nmd_home() -> Path:
 
     Mirrors ``NEBULONDB_HOME``: an explicit ``NEBULONMD_HOME`` override
     wins; otherwise fall back to the repository root derived from this file.
-    Lets ``.env`` / ``nebulonmind.cfg`` (and web assets) be found no matter
+    Lets ``.env`` / ``nebulonmd.cfg`` (and web assets) be found no matter
     which directory the process is launched from.
     """
     override = os.environ.get("NEBULONMD_HOME")
@@ -648,11 +648,11 @@ def _default_env_path() -> Path:
 
 
 def _default_cfg_path() -> Path:
-    return _nmd_home() / "nebulonmind.cfg"
+    return _nmd_home() / "nebulonmd.cfg"
 
 
 def _load_cfg(cfg_path: Optional[Path] = None, override: bool = False) -> bool:
-    """Load non-secret settings from ``nebulonmind.cfg`` into ``os.environ``.
+    """Load non-secret settings from ``nebulonmd.cfg`` into ``os.environ``.
 
     Mirrors ``NebulonDB``'s ``nebulondb.cfg``: the INI file stores operational
     settings (hosts, ports, weights, sizes), while secrets (username,

@@ -547,7 +547,7 @@ Delete a chat transcript.
 - `GET /dashboard/web` - Web console alias
 
 #### 12.2 Config Routes
-- `GET /config/cfg` - Get nebulonmind.cfg settings
+- `GET /config/cfg` - Get nebulonmd.cfg settings
 - `PUT /config/cfg` - Update configuration
 - `POST /config/restart` - Restart service
 

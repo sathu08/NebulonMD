@@ -461,7 +461,7 @@ def create_app(
 
     # Default background jobs: nightly memory consolidation
     # (2:00 AM), a weekly summary (Sundays 9:00 AM) and the auto-delete
-    # sweep for expired memories (daily, cron from nebulonmind.cfg) — all
+    # sweep for expired memories (daily, cron from nebulonmd.cfg) — all
     # for the configured default user. Manual triggers hit the endpoints
     # below.
     def _register_background_jobs() -> None:

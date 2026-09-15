@@ -1,5 +1,5 @@
 [project]
-name = "nebulonmind"
+name = "nebulonmd"
 version = "1.0.0"
 description = "Memory layer for AI assistants on top of NebulonDB (nmd_host)."
 requires-python = ">=3.10,<3.14"
@@ -23,10 +23,10 @@ dev = [
 ]
 
 [project.scripts]
-nebulonmind = "nebulonmind:main"
+nebulonmd = "nebulonmd:main"
 
 [tool.setuptools]
-py-modules = ["nebulonmind"]
+py-modules = ["nebulonmd"]
 
 [tool.setuptools.packages.find]
 include = ["nmd_host*"]

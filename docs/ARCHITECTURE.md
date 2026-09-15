@@ -390,12 +390,12 @@ bounded, exponential-backoff `RetryingLLMProvider` on rate limits
 
 `other` is the generic OpenAI-compatible endpoint for any custom model host:
 set `NMD_LLM_PROVIDER=other` with `NMD_LLM_MODEL`, `NMD_LLM_API_KEY` and
-`NMD_LLM_BASE_URL`. Model and base URL may also live in `nebulonmind.cfg`
+`NMD_LLM_BASE_URL`. Model and base URL may also live in `nebulonmd.cfg`
 under `[llm]` (`nmd_llm_model` / `nmd_llm_base_url`); the API key always stays
 in `.env`, never in the cfg:
 
 ```ini
-# nebulonmind.cfg [llm]
+# nebulonmd.cfg [llm]
 nmd_llm_provider = other
 nmd_llm_model = my-org/my-model
 nmd_llm_base_url = https://llm.example.com/v1
@@ -430,7 +430,7 @@ auto-delete sweep `auto_delete_expired` — daily by default (`0 3 * * *`).
 Schedules live as constants in `nmd_host/utils/constants.py`
 (`MEMORY_CONSOLIDATION_CRON_DEFAULT`, `WEEKLY_SUMMARY_CRON_DEFAULT`,
 `AUTO_DELETE_CRON_DEFAULT`); the auto-delete cron is overridable via
-`nebulonmind.cfg` → `[lifecycle] nmd_lifecycle_auto_cleanup_cron`.
+`nebulonmd.cfg` → `[lifecycle] nmd_lifecycle_auto_cleanup_cron`.
 Manual triggers accept any user and are exposed as API endpoints.
 
 The **auto-delete sweep** is the only scheduled job that deletes: gated by
@@ -586,7 +586,7 @@ Configuration is environment-driven from `.env` (see `nmd_host/core/config.py`).
   default `0 3 * * *`).
 * **Background agents** — `NMD_BACKGROUND_USER`.
 
-Operational settings are also readable from `nebulonmind.cfg` (INI, loaded into
+Operational settings are also readable from `nebulonmd.cfg` (INI, loaded into
 the environment at startup by `_load_cfg`; secrets stay in `.env`). Shared
 defaults — hosts/ports, graceful shutdown, cron schedules, branding — live in
 `nmd_host/utils/constants.py` so every module imports the same value instead of

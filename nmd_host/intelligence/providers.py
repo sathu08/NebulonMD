@@ -7,7 +7,7 @@ nvidia | ollama | openrouter | other) plus the matching API key/model env vars.
 
 ``other`` is the generic OpenAI-compatible endpoint: set ``NMD_LLM_MODEL``,
 ``NMD_LLM_API_KEY`` and ``NMD_LLM_BASE_URL`` (model + base URL may also live
-in ``nebulonmind.cfg`` under ``[llm]``; the key always stays in ``.env``).
+in ``nebulonmd.cfg`` under ``[llm]``; the key always stays in ``.env``).
 
 The extraction system now includes robust JSON parsing with multiple fallback
 strategies to handle various model output formats. If ``NMD_LLM_EXTRACTOR_LENIENT``
@@ -537,7 +537,7 @@ class OtherProvider(OpenAIProvider):
         NMD_LLM_API_KEY   (in ``.env``, never in the cfg)
         NMD_LLM_BASE_URL  e.g. https://llm.example.com/v1
 
-    Model and base URL may also come from ``nebulonmind.cfg`` ``[llm]``
+    Model and base URL may also come from ``nebulonmd.cfg`` ``[llm]``
     (``nmd_llm_model`` / ``nmd_llm_base_url``); explicit constructor args
     always win over the environment.
     """

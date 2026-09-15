@@ -97,7 +97,7 @@ COMMAND_OPTIONS: tuple[CommandOption, ...] = (
     ),
     # ---- Config ----------------------------------------------------------
     CommandOption(
-        "/settings", "Edit nebulonmind.cfg settings", category="Config"
+        "/settings", "Edit nebulonmd.cfg settings", category="Config"
     ),
     CommandOption(
         "/credentials",

@@ -1,4 +1,4 @@
-"""NebulonMind configuration (``nebulonmind.cfg``) read/write API.
+"""NebulonMind configuration (``nebulonmd.cfg``) read/write API.
 
 Mirrors ``ndb_host/api/routes/dashboard.py`` from NebulonDB: exposes a
 grouped, typed settings view (``SETTINGS_GROUPS``) so both the TUI and the
@@ -24,7 +24,7 @@ logger = logging.getLogger("nmd_host.api.routes.config")
 
 router = APIRouter()
 
-CFG_FILE = _nmd_home() / "nebulonmind.cfg"
+CFG_FILE = _nmd_home() / "nebulonmd.cfg"
 
 
 def _cfg() -> NMDConfig:
@@ -48,7 +48,7 @@ def _cfg() -> NMDConfig:
 
 @router.get("/cfg")
 async def get_cfg() -> dict:
-    """Return the ``nebulonmind.cfg`` settings grouped and typed.
+    """Return the ``nebulonmd.cfg`` settings grouped and typed.
 
     Shape mirrors the NebulonDB console: ``data.groups`` is a list of
     ``{id, title, description, keys: [{key, label, type, hint, value}]}``
@@ -75,7 +75,7 @@ async def get_cfg() -> dict:
 async def update_cfg(
     payload: dict = Body(..., description="{'config': {section: {key: value}}}"),
 ) -> dict:
-    """Update ``nebulonmind.cfg`` entries.
+    """Update ``nebulonmd.cfg`` entries.
 
     ``config`` is ``{section: {key: value}}``; every section must already
     exist in the cfg and secret keys are rejected. Returns the list of
@@ -94,10 +94,10 @@ async def update_cfg(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _load_cfg(CFG_FILE, override=True)
-    logger.info("nebulonmind.cfg updated: %s", ", ".join(updated))
+    logger.info("nebulonmd.cfg updated: %s", ", ".join(updated))
     return {
         "success": True,
-        "message": "nebulonmind.cfg updated; non-secret settings applied live.",
+        "message": "nebulonmd.cfg updated; non-secret settings applied live.",
         "data": {"updated": updated, "live": True, "restart_required": False},
     }
 

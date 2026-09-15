@@ -137,12 +137,12 @@ class UsernameScreen(Screen):
 
 
 # ==========================================================
-# CONFIG EDITOR (nebulonmind.cfg — via the API)
+# CONFIG EDITOR (nebulonmd.cfg — via the API)
 # ==========================================================
 
 
 class ConfigKeyScreen(Screen):
-    """Browse the grouped settings of ``nebulonmind.cfg``.
+    """Browse the grouped settings of ``nebulonmd.cfg``.
 
     Uses the API (``GET /api/NebulonMind/config/cfg``) so it shows the same
     grouped, typed view as the website. Selecting a setting opens a small
@@ -168,7 +168,7 @@ class ConfigKeyScreen(Screen):
             yield Static("NebulonMind Settings", id="modal-title-username")
             yield Static(
                 "Select a setting to edit. Changes are written to "
-                "nebulonmind.cfg and need a server restart to take effect.",
+                "nebulonmd.cfg and need a server restart to take effect.",
                 id="modal-hint-username",
             )
             yield Static("", id="cfg-status")
@@ -273,7 +273,7 @@ class ConfigKeyScreen(Screen):
             return
         self._edits.setdefault(section, {})[key] = value
         self._render_keys()
-        self._set_status("Unsaved change: *  •  Save to write nebulonmind.cfg")
+        self._set_status("Unsaved change: *  •  Save to write nebulonmd.cfg")
 
     def _save(self) -> None:
         if not self._edits:
