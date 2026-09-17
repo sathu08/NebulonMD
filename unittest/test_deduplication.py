@@ -30,14 +30,14 @@ def test_exact_memory_id_duplicate():
 
 
 def test_normalized_text_equality_duplicate():
-    a, b = _memories([("My name is Sathya.", "identity"), ("my NAME is sathya", "identity")])
+    a, b = _memories([("My name is nmd_user_01.", "identity"), ("my NAME is nmd_user_01", "identity")])
     result = DuplicateDetector().check(a, [b])
     assert result.is_duplicate is True
     assert result.similarity == 1.0
 
 
 def test_reordered_tokens_duplicate():
-    a, b = _memories([("My name is Sathya", "identity"), ("Sathya is my name.", "identity")])
+    a, b = _memories([("My name is nmd_user_01", "identity"), ("nmd_user_01 is my name.", "identity")])
     result = DuplicateDetector().check(a, [b])
     assert result.is_duplicate is True
     assert result.similarity == 1.0

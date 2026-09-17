@@ -13,9 +13,9 @@ Phase 4 layout:
                       Relationships / Service
 
 Every route talks exclusively to its user's ``ServiceBundle`` (repository +
-Step 3 lifecycle manager): CRUD goes through the repository, retrieval and
-context through the existing Step 3 pipeline, intelligence through the
-existing Step 2 bridge — no business logic is re-implemented here.
+lifecycle manager): CRUD goes through the repository, retrieval and
+context through the existing lifecycle pipeline, intelligence through the
+existing decision bridge — no business logic is re-implemented here.
 """
 
 from __future__ import annotations
@@ -115,6 +115,7 @@ from .service import (
 from .routes.dashboard import WEB_DIR, router as dashboard_router
 from .routes.config import router as config_router
 from .routes.chats import router as chats_router
+from .routes.monitor import router as monitor_router
 
 logger = logging.getLogger("nmd_host.api.server")
 
@@ -122,13 +123,14 @@ SERVICE_VERSION = "v0.1"
 
 TAGS = [
     {"name": "Memory", "description": "CRUD for Memory objects (Phase 4.2) — truth + vectors + graph writes via the repository."},
-    {"name": "Recall", "description": "Semantic recall through the Step 3 lifecycle pipeline (Phase 4.3) — one retrieval system."},
+    {"name": "Recall", "description": "Semantic recall through the lifecycle pipeline (Phase 4.3) — one retrieval system."},
     {"name": "Context", "description": "Bounded, provenance-carrying LLM context (Phase 4.4) — the existing MemoryContextBuilder."},
-    {"name": "Intelligence", "description": "Step 2 conversation → memory decisions and ingestion (Phase 4.5) — decision/ingestion flow, no storage bypass."},
+    {"name": "Intelligence", "description": "Conversation → memory decisions and ingestion (Phase 4.5) — decision/ingestion flow, no storage bypass."},
     {"name": "Relationships", "description": "Entity linking through the existing relate() functionality (Phase 4.6)."},
-    {"name": "Agent", "description": "Step 6 Agent Runtime: stateless tool-calling chat over the memory tools (remember/recall)."},
-    {"name": "Evaluation", "description": "Step 13 Agent Evaluation: benchmark the agent over a dataset (retrieval, tool selection, answer correctness, hallucination, latency, tokens)."},
-    {"name": "Background", "description": "Step 14 Background Agents: nightly memory consolidation (Memory Agent) and weekly work summaries (Task Agent), scheduled in-process; manual run triggers + scheduler status."},
+    {"name": "Agent", "description": "Agent Runtime: stateless tool-calling chat over the memory tools (remember/recall)."},
+    {"name": "Evaluation", "description": "Agent Evaluation: benchmark the agent over a dataset (retrieval, tool selection, answer correctness, hallucination, latency, tokens)."},
+    {"name": "Monitor", "description": "nmd_monitor: own LangSmith-equivalent — persisted agent traces, stats and (P1+) feedback/datasets. See docs/MONITOR_PLAN.md."},
+    {"name": "Background", "description": "Background Agents: nightly memory consolidation (Memory Agent) and weekly work summaries (Task Agent), scheduled in-process; manual run triggers + scheduler status."},
     {"name": "User", "description": "Explicit username registration: a username is mapped to an opaque user_id via /user/create_user; /user/setup switches to an already-registered username. Unregistered usernames are rejected everywhere."},
     {"name": "Service", "description": "Health checks and service metadata (Phase 4.12)."},
 ]
@@ -323,7 +325,7 @@ def create_app(
                         "backend compatibility check failed; startup policy is "
                         "advisory (readiness will report not-ready)"
                     )
-        # Step 14 — background agents: start the scheduler with the service.
+        # Background agents: start the scheduler with the service.
         try:
             await app.state.scheduler.start()
         except Exception:  # pragma: no cover - defensive startup
@@ -358,8 +360,8 @@ def create_app(
         description=(
             "Memory layer service for AI assistants, built on NebulonDB. "
             "Every write/read is persisted through the NebulonDB REST API "
-            "and ranked through the Step 3 lifecycle pipeline; Step 2 "
-            "decision endpoints are available under /intelligence. "
+            "and ranked through the lifecycle pipeline; decision "
+            "endpoints are available under /intelligence. "
             "All responses use the StandardResponse envelope "
             "{success, message, data}. Clients identify by username: they "
             "register explicitly via /user/create_user (which returns the "
@@ -380,7 +382,7 @@ def create_app(
     app.state.config = config
     app.state.provider = provider
 
-    # Step 14 — background agents scheduler (registered jobs below, once
+    # Background agents scheduler (registered jobs below, once
     # ``_bundle`` exists; started/stopped with the service lifecycle).
     from ..agents import BackgroundScheduler
 
@@ -459,9 +461,9 @@ def create_app(
                 headers={"WWW-Authenticate": "NebulonMindUser"},
             ) from exc
 
-    # Step 14 — default background jobs: nightly memory consolidation
+    # Default background jobs: nightly memory consolidation
     # (2:00 AM), a weekly summary (Sundays 9:00 AM) and the auto-delete
-    # sweep for expired memories (daily, cron from nebulonmind.cfg) — all
+    # sweep for expired memories (daily, cron from nebulonmd.cfg) — all
     # for the configured default user. Manual triggers hit the endpoints
     # below.
     def _register_background_jobs() -> None:
@@ -539,7 +541,7 @@ def create_app(
         return memory
 
     # ------------------------------------------------------------------ #
-    # Service (4.12 / Step 6): liveness + readiness + metrics            #
+    # Service (4.12): liveness + readiness + metrics                   #
     # ------------------------------------------------------------------ #
 
     def _health_data(backend: str = "down") -> HealthData:
@@ -754,7 +756,7 @@ def create_app(
             "Persists a Memory across truth (COSMOS), meaning (ORBIT "
             "vectors) and relationships (ORBIT Mesh). The memory is pinned "
             "to the ``user_id`` query parameter. With ``gate=true`` the same "
-            "Step 3 ingest gate as ``/intelligence/process`` runs first: "
+            "ingest gate as ``/intelligence/process`` runs first: "
             "expired memories are refused, TEMPORARY memories without an "
             "expiry are stamped with the ``NMD_TEMPORARY_TTL_SECONDS`` "
             "default, and a duplicate resolves to the existing memory "
@@ -768,7 +770,7 @@ def create_app(
         gate: bool = Query(
             False,
             description=(
-                "Run the Step 3 ingest gate (expiry + retention + "
+                "Run the ingest gate (expiry + retention + "
                 "deduplication) before storing. Idempotent: a duplicate "
                 "returns the existing memory with HTTP 200."
             ),
@@ -870,9 +872,9 @@ def create_app(
     @app.get(
         "/api/NebulonMind/search",
         tags=["Recall"],
-        summary="Semantic recall (Step 3 lifecycle-ranked)",
+        summary="Semantic recall (lifecycle-ranked)",
         description=(
-            "Retrieves memories through the single Step 3 pipeline "
+            "Retrieves memories through the single lifecycle pipeline "
             "(retention filter → ranking → deduplication → top-k). With "
             "``expand=true`` candidates first pass through depth-1 graph "
             "expansion before the same ranking pipeline."
@@ -907,7 +909,7 @@ def create_app(
         tags=["Context"],
         summary="Build bounded LLM context for a query",
         description=(
-            "Retrieves through the Step 3 pipeline, then formats a bounded, "
+            "Retrieves through the lifecycle pipeline, then formats a bounded, "
             "provenance-carrying context string with the existing "
             "MemoryContextBuilder (no call to any LLM)."
         ),
@@ -945,7 +947,7 @@ def create_app(
     @app.post(
         "/api/NebulonMind/intelligence/decide",
         tags=["Intelligence"],
-        summary="Step 2: conversation → memory decisions (no storage)",
+        summary="Conversation → memory decisions (no storage)",
         description=(
             "Runs the existing MemoryDecisionEngine over a conversation and "
             "returns validated decisions. Nothing is persisted."
@@ -974,10 +976,10 @@ def create_app(
     @app.post(
         "/api/NebulonMind/intelligence/process",
         tags=["Intelligence"],
-        summary="Step 2 + Step 3: conversation → decisions → lifecycle gate → store",
+        summary="Conversation → decisions → lifecycle gate → store",
         description=(
-            "Decides over a conversation (Step 2), gates each candidate "
-            "through the lifecycle manager's ingest() (Step 3) and stores "
+            "Decides over a conversation, gates each candidate "
+            "through the lifecycle manager's ingest() and stores "
             "only the STORE-approved memories. DUPLICATE / EXPIRED / INVALID "
             "candidates are reported with their reason and never stored."
         ),
@@ -1054,7 +1056,7 @@ def create_app(
         )
 
     # ------------------------------------------------------------------ #
-    # Agent API (Step 6)                                                 #
+    # Agent API                                                          #
     # ------------------------------------------------------------------ #
 
     @app.post(
@@ -1062,9 +1064,9 @@ def create_app(
         tags=["Agent"],
         summary="Agent chat: tool-calling loop over the user's memory",
         description=(
-            "Runs the Step 6 AgentRuntime: an LLM (NMD_LLM_PROVIDER) either "
+            "Runs the AgentRuntime: an LLM (NMD_LLM_PROVIDER) either "
             "answers directly or calls the memory tools — remember persists "
-            "new memories (Step 2 → Step 3 gate → NebulonDB), recall searches "
+            "new memories (decision → lifecycle gate → NebulonDB), recall searches "
             "existing ones. The runtime is stateless: prior turns arrive via "
             "{messages}, persistent state lives only in NebulonDB."
         ),
@@ -1078,7 +1080,7 @@ def create_app(
         bundle = _bundle(user_id)
         from ..agent import AgentRuntime, build_memory_toolkit
         from ..agent.schemas import AgentMessage
-        from ..intelligence.providers import LLMProviderError, provider_from_env
+        from ..intelligence.providers import LLMProviderError, provider_from_env, provider_from_env_with_model
 
         # Resolve the session transcript (if a session_id was supplied): an
         # unknown/closed session is not an error for chat — it degrades to a
@@ -1097,7 +1099,7 @@ def create_app(
                 prior = list(session.transcript) + prior
 
         # Pre-retrieval grounding: surface stored memory relevant to the
-        # current utterance before the LLM turn (same Step 3 pipeline the
+        # current utterance before the LLM turn (same lifecycle pipeline the
         # recall tool uses). This anchors answers to what is actually stored
         # even when the model would otherwise answer without recalling. A
         # no-op when nothing relevant is stored, so the agent stays free.
@@ -1118,7 +1120,8 @@ def create_app(
                 ]
 
         try:
-            llm = provider_from_env()
+            agent_model = config.agent_model if config.agent_model else None
+            llm = provider_from_env_with_model(model=agent_model)
         except Exception as exc:
             logger.warning("agent chat unavailable: %s", exc)
             raise HTTPException(
@@ -1147,10 +1150,54 @@ def create_app(
             app.state.sessions.append_messages(
                 resolved_user, session.session_id, data.transcript
             )
+        # Auto-save the transcript into the DB chat history (best-effort):
+        # session/conversation-scoped API chats share one history record
+        # (id = session_id) visible under /chats. Console chats carry no
+        # session_id and keep their own POST /chats saves — no duplicates.
+        # A history failure never fails the chat response.
+        chat_key = request.session_id or request.conversation_id
+        if chat_key and data.transcript:
+            try:
+                from ..stores.chat_history_store import history_store_for, transcript_to_chat
+                history_store_for(provider, user_id).save(
+                    transcript_to_chat(chat_key, user_id, data.transcript)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "agent chat history auto-save failed for %s: %s", user_id, exc
+                )
+        # nmd_monitor (P0): persist one trace per chat, best-effort.
+        # A monitor failure never fails the chat response.
+        try:
+            from ..monitor import MonitorRecorder
+            from ..monitor.store import monitor_store_for
+            from .tracing import request_id_var
+
+            recorder = MonitorRecorder()
+            thread_id = (
+                request.session_id or request.conversation_id
+                or (data.trace.trace_id if data.trace is not None else "")
+            )
+            llm_provider = getattr(llm, "provider", "") or ""
+            llm_model = getattr(llm, "model", None) or agent_model or ""
+            monitor_trace = recorder.from_chat(
+                data.trace,
+                user_id=user_id,
+                thread_id=thread_id,
+                request_id=request_id_var.get(),
+                provider=llm_provider,
+                model=llm_model,
+                input_text=request.text,
+                answer=data.answer,
+            )
+            if monitor_trace is not None:
+                monitor_store_for(provider, user_id).save(monitor_trace)
+        except Exception as exc:
+            logger.warning("nmd_monitor capture failed for %s: %s", user_id, exc)
         return AgentChatEnvelope(message="agent replied", data=data)
 
     # ------------------------------------------------------------------ #
-    # Agent sessions (Step 6.9/6.12)                                     #
+    # Agent sessions                                                       #
     # ------------------------------------------------------------------ #
 
     @app.post(
@@ -1267,7 +1314,7 @@ def create_app(
         )
 
     # ------------------------------------------------------------------ #
-    # Evaluation (Step 13)                                               #
+    # Evaluation                                                         #
     # ------------------------------------------------------------------ #
 
     @app.get(
@@ -1305,7 +1352,7 @@ def create_app(
         tags=["Evaluation"],
         summary="Run the agent evaluation",
         description=(
-            "Runs the Step 6 agent over the bundled benchmark dataset (or an "
+            "Runs the agent over the bundled benchmark dataset (or an "
             "inline ``items`` list) and reports metrics: tool selection "
             "accuracy, retrieval accuracy, answer correctness, hallucination "
             "rate, latency and token usage. Requires a configured LLM provider "
@@ -1360,7 +1407,7 @@ def create_app(
         )
 
     # ------------------------------------------------------------------ #
-    # Background Agents (Step 14)                                        #
+    # Background Agents                                                  #
     # ------------------------------------------------------------------ #
 
     @app.post(
@@ -1406,7 +1453,7 @@ def create_app(
         description=(
             "Generates a weekly summary of the user's recent memories, "
             "grouped by category, and persists it as a memory through the "
-            "Step 3 ingest gate (so it is retrievable like any other memory)."
+            "ingest gate (so it is retrievable like any other memory)."
         ),
         response_model=BackgroundAgentEnvelope,
     )
@@ -1457,7 +1504,7 @@ def create_app(
         )
 
     # ------------------------------------------------------------------ #
-    # LLM status (Step 6)                                                #
+    # LLM status                                                         #
     # ------------------------------------------------------------------ #
 
     @app.get(
@@ -1476,6 +1523,8 @@ def create_app(
 
         from ..intelligence.providers import provider_from_env
 
+        from ..intelligence.providers import _ensure_llm_env_from_cfg
+        _ensure_llm_env_from_cfg()  # env wins; cfg [llm] fills gaps (key stays .env-only)
         name = os.environ.get("NMD_LLM_PROVIDER", "").strip()
         provider = None
         error = None
@@ -1484,13 +1533,18 @@ def create_app(
                 provider = provider_from_env()
             except Exception as exc:
                 error = _redact_llm_error(str(exc))
+        model = getattr(provider, "model", None) if provider else None
+        if not model:
+            model = os.environ.get("NMD_LLM_MODEL", "").strip() or None
         return LLMStatusEnvelope(
             message="ok",
             data=LLMStatusData(
                 provider=name,
                 configured=provider is not None,
-                model=getattr(provider, "model", None) if provider else None,
+                model=model,
                 error=error,
+                base_url=os.environ.get("NMD_LLM_BASE_URL", "").strip() or None,
+                has_key=bool(os.environ.get("NMD_LLM_API_KEY", "").strip()),
             ),
         )
 
@@ -1512,6 +1566,11 @@ def create_app(
         chats_router,
         prefix="/api/NebulonMind",
         tags=["Chats"],
+    )
+    app.include_router(
+        monitor_router,
+        prefix="/api/NebulonMind/monitor",
+        tags=["Monitor"],
     )
     # Serve CSS/JS (and any other) console assets from web_dir under the
     # same prefix; the router routes registered above win on conflict.

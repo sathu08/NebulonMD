@@ -83,10 +83,10 @@ def test_ranking_applied_to_candidates():
 
 def test_duplicates_collapsed_during_retrieval():
     repo = InMemoryRepository()
-    _store(repo, "My name is Sathya")
-    dup = _store(repo, "My name is Sathya.")
+    _store(repo, "My name is nmd_user_01")
+    dup = _store(repo, "My name is nmd_user_01.")
     retriever = _retriever(repo, top_k=5, candidate_multiplier=3)
-    results = retriever.retrieve("sathya name")
+    results = retriever.retrieve("nmd_user_01 name")
     assert all(m.memory_id != dup.memory_id for m in results)
 
 

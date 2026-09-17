@@ -127,6 +127,7 @@ class _CosmosFake:
     def ensure_storage_corpora(self):
         self.ensure_corpus("mind_truth", "cosmos")
         self.ensure_corpus("mind_semantic", "orbit")
+        self.ensure_corpus("mind_chats", "cosmos")
 
     def list_segment(self, corpus, ndb_type):
         names = self._segments.get(corpus, [])
@@ -144,7 +145,8 @@ class _CosmosFake:
                 is_precomputed=is_precomputed,
             )
 
-    def load_segment(self, corpus, segment, ndb_type, records, set_columns=None, is_precomputed=None):
+    def load_segment(self, corpus, segment, ndb_type, records, set_columns=None, is_precomputed=None,
+                     lang_type=None, doc_type=None, metadata=None):
         key = (corpus, segment)
         stored = self._records.setdefault(key, [])
         for record in records:
@@ -173,13 +175,14 @@ def test_bootstrap_storage_corpora_provisioned_on_startup():
         client=backend, registry=NebulonDBUserRegistry(client=backend)
     )
     provider.bootstrap()
-    # identity corpus/segment plus both storage corpora exist afterwards
+    # identity corpus/segment plus all three storage corpora exist afterwards
     assert "nmd_Secrets" in backend._corpora
     assert "mind_truth" in backend._corpora
     assert "mind_semantic" in backend._corpora
+    assert "mind_chats" in backend._corpora
     # idempotent — a second startup does not error or duplicate
     provider.bootstrap()
-    assert len(backend._corpora) == 3
+    assert len(backend._corpora) == 4
 
 
 def test_nebulondb_registry_round_trips_over_real_cosmos_shape():

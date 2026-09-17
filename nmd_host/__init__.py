@@ -1,12 +1,14 @@
 """nmd_host — memory layer for AI assistants on top of NebulonDB.
 
 This package is the *client host* for NebulonMind: every store and the
-``NebulonMind`` facade talk to the NebulonDB REST API (``NEBULONDB_API_PORT``,
-default 6969, see ``.env``) — no ``ndb_host`` Python code is imported.
+``NebulonMind`` facade talk to the NebulonDB REST API (``NDB_API_PORT``,
+legacy ``NEBULONDB_API_PORT``, default 6969, see ``.env``) — no
+``ndb_host`` Python code is imported.
 
 The package also ships its own service: ``nmd_host.api.server`` exposes
 ``/api/NebulonMind/...`` endpoints, run with ``python -m nmd_host.serve``
-(listens on ``NEBULONDMIND_API_PORT``, default 9696).
+(listens on ``NMD_API_PORT``, legacy ``NEBULONDMIND_API_PORT``,
+default 9696).
 """
 
 from .agent import (

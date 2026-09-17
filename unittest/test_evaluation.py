@@ -114,8 +114,8 @@ class _ScriptedLLM:
         lowered = prompt.lower()
         # Second pass: the recursive prompt already embeds a tool result.
         if "tool: " in lowered:
-            if "sathya" in lowered or "my name" in lowered:
-                return LLMResponse(text="Your name is Sathya.")
+            if "nmd_user_01" in lowered or "my name" in lowered:
+                return LLMResponse(text="Your name is nmd_user_01.")
             return LLMResponse(text="I do not have a memory confirming that.")
         if "what is my name" in lowered:
             return LLMResponse(

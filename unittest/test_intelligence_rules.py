@@ -212,8 +212,15 @@ def test_memory_type_mapping():
 
 def test_every_memory_type_is_reachable_through_a_category():
     """Every Step 1 MemoryType must be produced by the Step 2 classifier —
-    never a silently invented type."""
-    assert set(CATEGORY_TO_MEMORY_TYPE.values()) == set(MemoryType)
+    never a silently invented type.
+
+    Note: DOC is a special document type not produced by the classifier from
+    conversation — it's set via the API convenience field.
+    """
+    produced = set(CATEGORY_TO_MEMORY_TYPE.values())
+    all_types = set(MemoryType)
+    # DOC is set via API, not classifier
+    assert produced == all_types - {MemoryType.DOC}
 
 
 def test_knowledge_rule_extracts_knowledge_memory(extractor):

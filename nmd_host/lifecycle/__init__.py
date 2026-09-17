@@ -6,7 +6,6 @@ and context building. Consumes Step 1 repositories (never ``ndb_host``)
 and already-extracted Step 2 ``Memory`` objects.
 """
 
-from .config import LifecycleConfig
 from .consolidation import ConsolidationDecision, MemoryConsolidator
 from .context import ContextConfig, MemoryContextBuilder
 from .deduplication import (
@@ -39,7 +38,6 @@ __all__ = [
     "ForgettingManager",
     "IngestionResult",
     "LexicalSemanticScorer",
-    "LifecycleConfig",
     "MemoryContextBuilder",
     "MemoryLifecycleManager",
     "MemoryRanker",

@@ -161,6 +161,9 @@ def app_with_llm(monkeypatch):
     monkeypatch.setattr(
         "nmd_host.intelligence.providers.provider_from_env", lambda: fake
     )
+    monkeypatch.setattr(
+        "nmd_host.intelligence.providers.provider_from_env_with_model", lambda *a, **k: fake
+    )
     provider = InMemoryServiceProvider()
     provider.create_user("user_001")
     app = create_app(provider=provider, config=ServiceConfig())

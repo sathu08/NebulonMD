@@ -7,6 +7,12 @@ const COMMANDS = [{
                 shortcut: 'h',
                 action: () => showHelp()
             }, {
+                name: '/remember',
+                icon: '💾',
+                desc: 'Store a memory: /remember "text" [--lang=en] [--type=doc|semantic|episodic|working|short_term|long_term|knowledge]',
+                shortcut: 'm',
+                action: (args) => rememberMemory(args)
+            }, {
                 name: '/clear',
                 icon: '🧹',
                 desc: 'Clear the terminal screen',
@@ -72,6 +78,18 @@ const COMMANDS = [{
                 desc: 'Run the agent evaluation suite',
                 shortcut: 'e',
                 action: () => runEval()
+            }, {
+                name: '/monitor',
+                icon: '📈',
+                desc: 'Show monitoring traces (use /monitor <trace_id> to view spans)',
+                shortcut: 'o',
+                action: (args) => showMonitorTraces(args)
+            }, {
+                name: '/feedback',
+                icon: '⭐',
+                desc: 'Submit feedback for a trace: /feedback <trace_id> <score> [tag] [comment]',
+                shortcut: 'f',
+                action: (args) => submitFeedback(args)
             }, ];
 
 // ============ STATE ============
@@ -109,15 +127,21 @@ const COMMANDS = [{
             }
 
             function loadChatsFromServer(restoreMode) {
-                apiGet('/chats', { user_id: currentUser }).then(body => {
+                apiGet('/chats', { user_id: currentUser, _: Date.now() }).then(body => {
                     const rows = (body.data && body.data.chats) || [];
                     savedChats = rows;
                     persistChats();
                     renderChatHistory();
-                    if (restoreMode === 'server' && rows.length) {
+                    // Server is source of truth: always render server state, never stale localStorage.
+                    if (rows.length) {
                         renderFullChat(rows[0]);
-                    } else if (chatHistory.length && !rows.some(c => c.id === currentChatId)) {
-                        touchCurrentChat();
+                    } else {
+                        chatHistory = [];
+                        currentChatId = Date.now().toString();
+                        localStorage.removeItem('nmd_active_chat');
+                        messageArea.innerHTML = '';
+                        messageCount = 0;
+                        showWelcomeMessage();
                     }
                 }).catch(() => { /* offline: keep the local cache */ });
             }
@@ -245,12 +269,32 @@ const COMMANDS = [{
             }
 
             function deleteChat(id) {
-                if (id === currentChatId) return;
+                const wasCurrent = (id === currentChatId);
+                // Remove locally first for instant UI feedback.
                 savedChats = savedChats.filter(c => c.id !== id);
                 persistChats();
+                if (wasCurrent) {
+                    chatHistory = [];
+                    currentChatId = Date.now().toString();
+                    try { localStorage.removeItem('nmd_active_chat'); } catch (_) {}
+                    persistActiveChat();
+                    messageArea.innerHTML = '';
+                    messageCount = 0;
+                    showWelcomeMessage();
+                }
                 renderChatHistory();
+                scrollToBottom();
                 apiRequest('DELETE', `/chats/${encodeURIComponent(id)}`, { params: { user_id: currentUser } })
-                    .catch(() => { });
+                    .then(body => {
+                        const deleted = body && body.data && body.data.deleted;
+                        addMessage('system', deleted ? `Chat deleted (server + local).` : `Chat removed locally; not found on server.`, 'system');
+                        // Reload server list so UI never shows DB-deleted/stale chats.
+                        loadChatsFromServer();
+                    })
+                    .catch(err => {
+                        addMessage('error', `Delete failed: ${err.message} — list reloaded from server.`, 'error');
+                        loadChatsFromServer();
+                    });
             }
 
             function resetChatContext() {
@@ -272,7 +316,8 @@ const COMMANDS = [{
                 if (qs.toString()) url += '?' + qs.toString();
                 const meta = {
                     method,
-                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+                    cache: 'no-store',
                 };
                 if (body !== undefined) meta.body = JSON.stringify(body);
                 const resp = await fetch(url, meta);
@@ -308,11 +353,19 @@ const COMMANDS = [{
                 applyTheme(localStorage.getItem('nmd_theme') || 'dark', true);
                 currentChatId = Date.now().toString();
                 createBackgroundParticles();
+                // Drop stale pre-API cache: server is source of truth for chats.
+                try {
+                    localStorage.removeItem('nmd_chats');
+                    localStorage.removeItem('nmd_active_chat');
+                    savedChats = [];
+                } catch (_) { /* storage unavailable */ }
+                messageArea.innerHTML = '';
+                messageCount = 0;
                 showWelcomeMessage();
+                addMessage('system', 'Loading chats from server…', 'system');
                 resolveDefaultUser().then(() => {
                     refreshApiBadge();
-                    const restored = restoreActiveChat();
-                    loadChatsFromServer(restored);
+                    loadChatsFromServer('server');
                 });
                 setupEventListeners();
                 terminalInput.focus();
@@ -354,6 +407,7 @@ const COMMANDS = [{
                     { prompt: 'system',
                     text: '║   Welcome to NebulonMind Terminal v0.1        ║', type: 'system' },
                     { prompt: 'system', text: '║   Type "/" to see all available commands.         ║', type: 'system' },
+                    { prompt: 'system', text: '║   Note: press Esc once to close menus.          ║', type: 'system' },
                     { prompt: 'system',
                     text: '║   Start chatting or use commands to explore.       ║', type: 'system' },
                     { prompt: 'system',
@@ -442,13 +496,27 @@ const COMMANDS = [{
                 updatePrompt();
             }
 
+            function isEscKey(e) {
+                return e.key === 'Escape' || e.key === 'Esc' || e.code === 'Escape' || e.keyCode === 27;
+            }
+
             function handleKeydown(e) {
-                // Close palette on Escape
-                if (e.key === 'Escape') {
-                    if (isPaletteOpen) {
+                // Single-press Escape: close settings first, then palette.
+                // Also clears a lone "/" filter so the palette doesn't
+                // instantly reopen (which felt like needing 2x Esc).
+                if (isEscKey(e)) {
+                    if (document.getElementById('settingsOverlay').classList.contains('visible')) {
+                        closeSettings();
+                    } else if (isPaletteOpen) {
                         closePalette();
-                        e.preventDefault();
+                        const v = terminalInput.value;
+                        if (v.startsWith('/') && !v.includes(' ')) {
+                            terminalInput.value = '';
+                            updatePrompt();
+                        }
                     }
+                    e.preventDefault();
+                    e.stopPropagation();
                     return;
                 }
 
@@ -634,6 +702,8 @@ const COMMANDS = [{
                         type: 'system' });
                 });
                 lines.push({ prompt: 'system', text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━', type: 'system' });
+                lines.push({ prompt: 'ai', text: 'Note: press Esc once to close the command menu or settings. 💬',
+                    type: 'ai' });
                 lines.push({ prompt: 'ai', text: 'You can also just type a regular message to chat with me! 💬',
                     type: 'ai' });
                 lines.forEach((line, i) => {
@@ -681,7 +751,7 @@ const COMMANDS = [{
                     addMessage('warning', 'Usage: /create <username> — e.g. /create sathya', 'warning');
                     return;
                 }
-                addMessage('user', `/create ${name}`, 'user');
+                // NOTE: handleCommand() already echoed input — do not echo again.
                 apiPost('/user/create_user', { username: name })
                     .then(body => {
                         const d = body.data || {};
@@ -703,7 +773,7 @@ const COMMANDS = [{
                     addMessage('warning', 'Usage: /setup <username> (must already be registered)', 'warning');
                     return;
                 }
-                addMessage('user', `/setup ${name}`, 'user');
+                // NOTE: handleCommand() already echoed input — do not echo again.
                 apiPost('/user/setup', { username: name })
                     .then(() => {
                         currentUser = name;
@@ -741,7 +811,7 @@ const COMMANDS = [{
                     addMessage('warning', 'Usage: /search <natural-language query>', 'warning');
                     return;
                 }
-                addMessage('user', `/search ${query}`, 'user');
+                // NOTE: handleCommand() already echoed input — do not echo again.
                 apiGet('/search', { query, top_k: 5, user_id: currentUser }).then(body => {
                     const results = (body.data && body.data.results) || [];
                     if (!results.length) {
@@ -757,7 +827,7 @@ const COMMANDS = [{
                             : (imp.priority || '');
                         addMessage('ai',
                             `[${i + 1}] ${m.content.text || ''}\n` +
-                            `    type=${cls.memory_type || cls.category || ''}  ${score}`,
+                            `    lang=${cls.lang || 'en'} type=${cls.memory_type || cls.category || ''}  ${score}`,
                             'ai');
                     });
                 }).catch(err => addMessage('error', `Search failed: ${err.message}`, 'error'));
@@ -815,7 +885,7 @@ const COMMANDS = [{
             }
 
             function runEval() {
-                addMessage('user', '/eval', 'user');
+                // NOTE: handleCommand() already echoed '/eval' — do not echo again (was printing twice).
                 addMessage('system', 'Running evaluation — this performs live LLM calls and may take a while.', 'system');
                 simulateTyping(() => apiPost('/evaluation/run', { dataset: 'memory_test_v1', seed: true, max_items: 10 })
                     .then(body => {
@@ -833,6 +903,169 @@ const COMMANDS = [{
                         addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
                     })
                     .catch(err => addMessage('error', `Evaluation failed: ${err.message}`, 'error'))
+                    .finally(() => scrollToBottom()));
+            }
+
+            function showMonitorTraces(args) {
+                const traceId = args ? args.trim() : '';
+                // NOTE: handleCommand() already echoed '/monitor' — do not echo again (was printing twice).
+                
+                if (traceId) {
+                    // Show specific trace with spans
+                    simulateTyping(() => apiGet(`/monitor/trace/${encodeURIComponent(traceId)}`, { user_id: currentUser })
+                        .then(body => {
+                            const d = body.data || {};
+                            const trace = d.trace || {};
+                            addMessage('system', `━━━ Trace: ${traceId} ━━━`, 'system');
+                            addMessage('ai',
+                                `User:       ${trace.user_id || 'unknown'}\n` +
+                                `Input:      ${trace.input_text || 'N/A'}\n` +
+                                `Answer:     ${trace.answer || 'N/A'}\n` +
+                                `Tools:      ${(trace.tools_used || []).join(', ') || 'none'}\n` +
+                                `Status:     ${trace.ok ? '✅ OK' : '❌ Failed'}\n` +
+                                `Latency:    ${trace.latency_ms || 0}ms\n` +
+                                `Tokens:     ${trace.tokens || 0}`,
+                                'ai');
+                            if (trace.spans && trace.spans.length > 0) {
+                                addMessage('system', 'Spans:', 'system');
+                                trace.spans.forEach((span, i) => {
+                                    addMessage('ai', `${i + 1}. ${span.name || 'Unnamed'} (${span.status || 'unknown'})`, 'ai');
+                                });
+                            }
+                            addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
+                        })
+                        .catch(err => addMessage('error', `Trace fetch failed: ${err.message}`, 'error'))
+                        .finally(() => scrollToBottom()));
+                } else {
+                    // List traces
+                    simulateTyping(() => apiGet('/monitor/traces', { user_id: currentUser })
+                        .then(body => {
+                            const d = body.data || {};
+                            const traces = d.traces || [];
+                            addMessage('system', `━━━ Recent Traces (${traces.length}) ━━━`, 'system');
+                            if (traces.length === 0) {
+                                addMessage('ai', 'No traces found. Start chatting to generate traces!', 'ai');
+                            } else {
+                                traces.slice(0, 10).forEach((trace, i) => {
+                                    const status = trace.ok ? '✅' : '❌';
+                                    const preview = (trace.input_text || '').substring(0, 50);
+                                    addMessage('ai',
+                                        `${i + 1}. ${status} ${trace.trace_id}\n   ` +
+                                        `Preview: ${preview}${trace.input_text && trace.input_text.length > 50 ? '...' : ''}\n` +
+                                        `Tools: ${(trace.tools_used || []).join(', ') || 'none'}`,
+                                        'ai');
+                                });
+                                if (traces.length > 10) {
+                                    addMessage('ai', `... and ${traces.length - 10} more traces. Use /monitor <trace_id> to view details.`, 'ai');
+                                }
+                            }
+                            addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
+                        })
+                        .catch(err => addMessage('error', `Trace list failed: ${err.message}`, 'error'))
+                        .finally(() => scrollToBottom()));
+                }
+            }
+
+            function submitFeedback(args) {
+                const parts = args ? args.trim().split(/\s+/) : [];
+                if (parts.length < 2) {
+                    addMessage('error', 'Usage: /feedback <trace_id> <score> [tag] [comment]', 'error');
+                    addMessage('ai', 'Score should be 1-5. Tag is optional (e.g. good, bad, hallucination).', 'ai');
+                    scrollToBottom();
+                    return;
+                }
+                
+                const traceId = parts[0];
+                const score = parseFloat(parts[1]);
+                const tag = parts[2] || '';
+                const comment = parts.slice(3).join(' ') || '';
+                
+                if (isNaN(score) || score < 1 || score > 5) {
+                    addMessage('error', 'Score must be a number between 1 and 5.', 'error');
+                    scrollToBottom();
+                    return;
+                }
+                
+                // NOTE: handleCommand() already echoed input — do not echo again.
+                addMessage('system', `Submitting feedback for trace ${traceId}...`, 'system');
+                
+                simulateTyping(() => apiPost('/monitor/feedback', {
+                    trace_id: traceId,
+                    score: score,
+                    tag: tag,
+                    comment: comment
+                }, { user_id: currentUser })
+                    .then(body => {
+                        const d = body.data || {};
+                        const feedback = d.feedback || {};
+                        addMessage('system', '━━━ Feedback Submitted ━━━', 'system');
+                        addMessage('ai',
+                            `Trace:     ${feedback.trace_id || 'unknown'}\n` +
+                            `Score:     ${feedback.score}/5\n` +
+                            `Tag:       ${feedback.tag || 'none'}\n` +
+                            `Comment:   ${feedback.comment || 'none'}`,
+                            'ai');
+                        addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
+                    })
+                    .catch(err => addMessage('error', `Feedback submit failed: ${err.message}`, 'error'))
+                    .finally(() => scrollToBottom()));
+            }
+
+            // ============ REMEMBER MEMORY ============
+            function rememberMemory(args) {
+                if (!args || !args.trim()) {
+                    addMessage('warning',
+                        'Usage: /remember "text to store" [--lang=en] [--type=doc|semantic|episodic|working|short_term|long_term|knowledge]',
+                        'warning');
+                    return;
+                }
+
+                // Parse args: extract quoted text and flags
+                const textMatch = args.match(/"([^"]+)"/) || args.match(/'([^']+)'/);
+                if (!textMatch) {
+                    addMessage('warning', 'Please provide text to store in quotes: /remember "your text"', 'warning');
+                    return;
+                }
+                const text = textMatch[1];
+
+                // Parse flags
+                const langMatch = args.match(/--lang=(\S+)/);
+                const typeMatch = args.match(/--type=(\S+)/);
+
+                const lang = langMatch ? langMatch[1] : 'en';
+                const memoryType = typeMatch ? typeMatch[1] : 'semantic';
+
+                // Validate memory_type
+                const validTypes = ['working', 'short_term', 'long_term', 'episodic', 'semantic', 'knowledge', 'doc'];
+                if (!validTypes.includes(memoryType)) {
+                    addMessage('warning',
+                        `Invalid type: ${memoryType}. Valid types: ${validTypes.join(', ')}`,
+                        'warning');
+                    return;
+                }
+
+                // NOTE: handleCommand() already echoed input — do not echo again.
+                addMessage('system', `Storing memory (lang=${lang}, type=${memoryType})...`, 'system');
+
+                const payload = {
+                    content: { text: text },
+                    lang: lang,
+                    memory_type: memoryType
+                };
+
+                simulateTyping(() => apiPost('/memory', payload, { user_id: currentUser })
+                    .then(body => {
+                        const d = body.data || {};
+                        const mem = d.memory || {};
+                        const cls = mem.classification || {};
+                        const storedType = cls.memory_type || memoryType;
+                        const storedLang = cls.lang || lang;
+                        addMessage('success',
+                            `Memory stored: ${mem.memory_id || 'OK'} (${storedType}, ${storedLang})`,
+                            'success');
+                        addMessage('ai', `Stored: "${text}"`, 'ai');
+                    })
+                    .catch(err => addMessage('error', `Store failed: ${err.message}`, 'error'))
                     .finally(() => scrollToBottom()));
             }
 
@@ -880,6 +1113,15 @@ const COMMANDS = [{
                 ]).then(([cfgRes, llmRes]) => {
                     const groups = (cfgRes.data && cfgRes.data.groups) || [];
                     const llm = llmRes.data || {};
+                    // Display rule: .env/status wins, cfg [llm] fills gaps (key: .env-only, never filled).
+                    const cfgLlm = {};
+                    (groups.find(g => g.id === 'llm') || { keys: [] }).keys.forEach(k => {
+                        cfgLlm[k.key] = k.value;
+                    });
+                    const dispProvider = llm.provider || cfgLlm.nmd_llm_provider || '';
+                    const dispModel = llm.model || cfgLlm.nmd_llm_model || '';
+                    const dispBaseUrl = llm.base_url || cfgLlm.nmd_llm_base_url || '';
+                    const keySet = !!(llm.has_key || llm.configured);
                     let html = '';
                     html += `<div class="settings-group">
                         <div class="settings-group-title">Session</div>
@@ -897,22 +1139,22 @@ const COMMANDS = [{
                     </div>`;
                     html += `<div class="settings-group">
                         <div class="settings-group-title">LLM credentials</div>
-                        <div class="settings-note">Stored in .env, never in cfg. Leave the API key blank to keep the current key.</div>
+                        <div class="settings-note">Provider/model/URL: .env wins, cfg fills gaps. API key: .env only, never shown — blank keeps it.</div>
                         <div class="settings-row">
                             <span class="settings-label">Provider</span>
-                            <input type="text" class="settings-input" data-cred="provider" value="${escHtml(llm.provider || '')}" placeholder="nvidia / ollama / openai / ...">
+                            <input type="text" class="settings-input" data-cred="provider" value="${escHtml(dispProvider)}" placeholder="nvidia / ollama / openai / ...">
                         </div>
                         <div class="settings-row">
                             <span class="settings-label">Model</span>
-                            <input type="text" class="settings-input" data-cred="model" value="${escHtml(llm.model || '')}" placeholder="model name">
+                            <input type="text" class="settings-input" data-cred="model" value="${escHtml(dispModel)}" placeholder="model name">
                         </div>
                         <div class="settings-row">
-                            <span class="settings-label">API key</span>
-                            <input type="password" class="settings-input" data-cred="api_key" autocomplete="off" placeholder="${llm.configured ? '••••••  (key set — leave blank)' : 'not set'}">
+                            <span class="settings-label">API key (.env only)${keySet ? ' — set ✓' : ''}</span>
+                            <input type="password" class="settings-input" data-cred="api_key" autocomplete="off" placeholder="${keySet ? '••••••  (key set — leave blank to keep)' : 'not set'}">
                         </div>
                         <div class="settings-row">
                             <span class="settings-label">Base URL</span>
-                            <input type="text" class="settings-input" data-cred="base_url" placeholder="https://… (optional)">
+                            <input type="text" class="settings-input" data-cred="base_url" value="${escHtml(dispBaseUrl)}" placeholder="https://… (optional)">
                         </div>
                     </div>`;
                     html += `<div class="settings-group">
@@ -982,7 +1224,8 @@ const COMMANDS = [{
                 document.querySelectorAll('#settingsBody [data-cred]').forEach(el => {
                     const key = el.dataset.cred;
                     const value = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value.trim();
-                    if (key === 'api_key' && !value) return;
+                    if (key === 'api_key' && !value) return; // blank = keep current key
+                    if ((key === 'provider' || key === 'model' || key === 'base_url') && !value) return; // don't wipe .env with ""
                     credPart[key] = value;
                 });
                 const tasks = [];
@@ -1000,7 +1243,7 @@ const COMMANDS = [{
                 Promise.all(tasks)
                     .then(() => {
                         addMessage('success',
-                            'Settings saved and applied live. Use “Restart service” for provider/bind changes.',
+                            'Settings saved (.env updated). Restart service to apply provider/model/key changes, then reopen Settings to verify.',
                             'success');
                         scrollToBottom();
                         closeSettings();
@@ -1200,7 +1443,29 @@ const COMMANDS = [{
             }
 
             // ============ GLOBAL KEYBOARD SHORTCUT ============
+            // Capture-phase so Esc works even when focus is in input/palette/settings.
             document.addEventListener('keydown', (e) => {
+                // Single-press Esc anywhere: close settings/palette (fixes "need 2x Esc" when input not focused)
+                if (isEscKey(e)) {
+                    if (document.getElementById('settingsOverlay').classList.contains('visible')) {
+                        closeSettings();
+                        e.preventDefault();
+                        return;
+                    }
+                    if (isPaletteOpen) {
+                        closePalette();
+                        if (document.activeElement === terminalInput) {
+                            const v = terminalInput.value;
+                            if (v.startsWith('/') && !v.includes(' ')) {
+                                terminalInput.value = '';
+                                updatePrompt();
+                            }
+                        }
+                        e.preventDefault();
+                        return;
+                    }
+                    return;
+                }
                 // Ctrl+L to clear
                 if (e.ctrlKey && e.key === 'l') {
                     e.preventDefault();
@@ -1218,7 +1483,8 @@ const COMMANDS = [{
                     terminalInput.focus();
                     handleInput({ target: terminalInput });
                 }
-            });
+            }, true);
+            window.__NMD_ESC_FIX = 'v2';
 
             // ============ START ============
             init();

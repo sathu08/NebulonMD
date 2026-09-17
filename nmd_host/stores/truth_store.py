@@ -43,12 +43,24 @@ class TruthStore:
         if not memory_id:
             raise ValueError("Truth doc must contain 'memory_id'")
         self.delete(memory_id)
+        
+        # Extract lang and type from the document.
+        # doc_type is free-form on the backend and stored verbatim, so the
+        # value sent here is exactly what the dashboard shows: "chat_memory"
+        # for memories, "doc" for uploaded documents.
+        classification = doc.get("classification", {})
+        lang = classification.get("lang", "en")
+        memory_type = classification.get("memory_type", "semantic")
+        type_ = "doc" if memory_type == "doc" else "chat_memory"
+        
         self._api.load_segment(
             self.CORPUS,
             self._segment,
             "cosmos",
             records=[{"text": json.dumps(doc)}],
             set_columns=["text"],
+            lang_type=lang,
+            doc_type=type_,
         )
 
     def get(self, memory_id: str) -> Optional[Dict[str, Any]]:

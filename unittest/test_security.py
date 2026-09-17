@@ -61,7 +61,7 @@ def authed_client():
 def test_backend_credentials_never_appear_in_responses(client):
     health = client.get("/api/NebulonMind/health")
     text = str(health.json()) + client.get("/metrics").text
-    for secret in ("sathya", "6969", "NEBULONDB_", "password"):
+    for secret in ("nmd_user_01", "6969", "NEBULONDB_", "password"):
         assert secret not in text
 
 

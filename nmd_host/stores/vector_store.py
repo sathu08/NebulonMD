@@ -26,7 +26,14 @@ class VectorStore:
     def segment(self) -> str:
         return self._segment
 
-    def insert(self, memory_id: str, text: str) -> int:
+    def insert(
+        self,
+        memory_id: str,
+        text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        lang_type: str = "en",
+        doc_type: str = "chat_memory",
+    ) -> int:
         """Insert a new embedding (computed server-side); returns the record id."""
         self._api.load_segment(
             self.CORPUS,
@@ -35,20 +42,30 @@ class VectorStore:
             records=[{"name": memory_id, "text": text}],
             set_columns=["text"],
             is_precomputed=False,
+            lang_type=lang_type,
+            doc_type=doc_type,
+            metadata=metadata,
         )
         record_id = self.record_id_of(memory_id)
         if record_id is None:
             raise RuntimeError(f"vector insert failed for {memory_id}")
         return record_id
 
-    def update(self, memory_id: str, text: str) -> None:
+    def update(
+        self,
+        memory_id: str,
+        text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        lang_type: str = "en",
+        doc_type: str = "chat_memory",
+    ) -> None:
         """Replace the embedding/metadata of an existing memory (idempotent)."""
         record_id = self.record_id_of(memory_id)
         if record_id is None:
-            self.insert(memory_id, text)
+            self.insert(memory_id, text, metadata, lang_type, doc_type)
             return
         self._api.delete_record(self.CORPUS, self._segment, "orbit", record_id)
-        self.insert(memory_id, text)
+        self.insert(memory_id, text, metadata, lang_type, doc_type)
 
     def delete(self, memory_id: str) -> bool:
         record_id = self.record_id_of(memory_id)

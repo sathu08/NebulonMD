@@ -6,12 +6,14 @@ NebulonDB through the toolkit. The loop:
 
     system prompt + transcript (+ tool results) → LLM reply
     reply is a tool-call JSON  → execute tool → back to the LLM
-    reply is plain text       → final answer
+    reply is plain text       → fallback extraction → execute remember tool if needed → back to LLM
+    reply is plain text (no extraction) → final answer
 
 Tool calls are requested from the model in plain JSON (see
 ``prompt.DEFAULT_SYSTEM_PROMPT``), so no schema-constrained ``structured()``
 call is needed — the runtime tolerates malformed replies by treating them as
-the final answer.
+the final answer. If the LLM doesn't call tools, a fallback rule-based
+extractor runs on the user's message to auto-store facts.
 """
 
 from __future__ import annotations
@@ -22,6 +24,8 @@ import time
 from typing import Dict, List, Optional
 
 from nmd_host.intelligence.providers import LLMProvider
+from nmd_host.intelligence.rules import RuleBasedExtractor
+from nmd_host.intelligence.schemas import Conversation
 from nmd_host.utils.constants import MAX_TURN_RESULT_CHARS
 
 from .config import AgentConfig
@@ -74,6 +78,8 @@ class AgentRuntime:
         self._tools = {tool.name: tool for tool in tools}
         self._config = config or AgentConfig.from_env()
         self._default_trace = trace
+        # Fallback rule-based extractor for auto-storing facts when LLM doesn't call tools
+        self._fallback_extractor = RuleBasedExtractor(min_strength=0.55)
 
     def chat(
         self,
@@ -101,6 +107,7 @@ class AgentRuntime:
         )
         model_name = getattr(self._llm, "model", None) or ""
         started = time.monotonic()
+        fallback_used = False
         for _ in range(self._config.max_turns):
             prompt = "\n".join(
                 [
@@ -124,6 +131,46 @@ class AgentRuntime:
             )
             call = _parse_tool_call(text)
             if call is None or call.tool not in self._tools:
+                # LLM returned plain text - try fallback extraction for remember tool
+                if not fallback_used and "remember" in self._tools:
+                    fallback_result = self._run_fallback_extraction(user_text)
+                    if fallback_result:
+                        # Execute the remember tool with extracted facts
+                        tool_started = time.monotonic()
+                        try:
+                            detail = self._tools["remember"].run(fallback_result)
+                        except Exception as exc:
+                            logger.warning("fallback remember tool failed: %s", exc)
+                            detail = f"error: fallback remember failed ({type(exc).__name__})"
+                        tool_ms = (time.monotonic() - tool_started) * 1000.0
+                        ok = not detail.startswith("error")
+                        trace.tools.append(
+                            ToolSpan(
+                                tool="remember",
+                                ok=ok,
+                                latency_ms=tool_ms,
+                                detail=detail[:200],
+                            )
+                        )
+                        tool_results.append(
+                            AgentToolResult(tool="remember", ok=ok, detail=detail)
+                        )
+                        loop.append(AgentMessage(role="assistant", content=text))
+                        loop.append(
+                            AgentMessage(role="tool", content=detail[:MAX_TURN_RESULT_CHARS])
+                        )
+                        fallback_used = True
+                        # Return immediately with LLM's answer + tool result (no extra LLM call)
+                        trace.turns = len(tool_results) + 1
+                        trace.total_ms = (time.monotonic() - started) * 1000.0
+                        return AgentChatData(
+                            answer=text,
+                            turns=len(tool_results) + 1,
+                            tool_calls=tool_results,
+                            transcript=_full_transcript(prior, user_text, loop),
+                            trace=trace,
+                        )
+                
                 loop.append(AgentMessage(role="assistant", content=text))
                 trace.turns = len(tool_results) + 1
                 trace.total_ms = (time.monotonic() - started) * 1000.0
@@ -180,6 +227,32 @@ class AgentRuntime:
             transcript=_full_transcript(prior, user_text, loop),
             trace=trace,
         )
+
+    def _run_fallback_extraction(self, user_text: str) -> Optional[dict]:
+        """Run rule-based extractor on user message to auto-extract remember arguments."""
+        try:
+            # Create a minimal conversation with just the user's message
+            conversation = Conversation.from_user_message(user_text)
+            decisions = self._fallback_extractor.extract(conversation)
+            
+            # Filter for should_remember decisions
+            remember_decisions = [d for d in decisions if d.should_remember]
+            if not remember_decisions:
+                return None
+            
+            # Combine all extracted facts into one remember call
+            # Use the first (strongest) decision's text as the primary fact
+            primary = remember_decisions[0].candidate
+            facts = [d.candidate.text for d in remember_decisions]
+            
+            # Build remember arguments
+            return {
+                "text": " | ".join(facts) if len(facts) > 1 else primary.text,
+                "category": primary.category.value if primary.category else "fact"
+            }
+        except Exception as exc:
+            logger.warning("fallback extraction failed: %s", exc)
+            return None
 
     def _bind_trace(self, trace: ExecutionTrace) -> None:
         """Give trace-aware tools a handle to the current run's trace.

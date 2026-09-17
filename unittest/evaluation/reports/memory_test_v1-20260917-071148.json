@@ -1,0 +1,166 @@
+{
+  "metrics": {
+    "questions": 8,
+    "tool_selection_accuracy": 0.875,
+    "retrieval_accuracy": 1.0,
+    "answer_correctness": 0.5,
+    "hallucination_rate": 1.0,
+    "avg_latency_ms": 74566.72,
+    "max_latency_ms": 119828.3,
+    "avg_tokens": 107.62
+  },
+  "results": [
+    {
+      "id": "q1",
+      "question": "What is my name?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "Sathya",
+      "expected_memory": "Sathya",
+      "actual_tools": [
+        "recall",
+        "recall",
+        "recall"
+      ],
+      "retrieval_ok": true,
+      "tool_ok": true,
+      "answer": "I could not finish answering within the tool-call limit.",
+      "answer_ok": false,
+      "declines_answer": false,
+      "latency_ms": 119828.3,
+      "tokens": 72,
+      "error": null
+    },
+    {
+      "id": "q2",
+      "question": "What project am I building?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "NebulonMind",
+      "expected_memory": "NebulonMind",
+      "actual_tools": [
+        "recall"
+      ],
+      "retrieval_ok": true,
+      "tool_ok": true,
+      "answer": "Based on the information I have, I don't see a specific memory about what project you're currently building. I do recall that you write your projects in Python, and there are references to past projects involving web research and reading documentation about NebulonMind, but nothing about an active project you're building right now.\n\nCould you tell me more about the project you're working on?",
+      "answer_ok": true,
+      "declines_answer": false,
+      "latency_ms": 60835.5,
+      "tokens": 260,
+      "error": null
+    },
+    {
+      "id": "q3",
+      "question": "What database does NebulonMind use?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "NebulonDB",
+      "expected_memory": "NebulonDB",
+      "actual_tools": [],
+      "retrieval_ok": true,
+      "tool_ok": false,
+      "answer": "I don't have specific information about what database NebulonMind uses in my system architecture details. As a memory-layer AI assistant, I do have memory capabilities through the remember and recall tools, but the underlying database technology isn't specified in my knowledge base.",
+      "answer_ok": false,
+      "declines_answer": false,
+      "latency_ms": 25612.9,
+      "tokens": 48,
+      "error": null
+    },
+    {
+      "id": "q4",
+      "question": "What programming language do I use?",
+      "type": "known",
+      "expected_tool": "recall",
+      "expected_answer": "Python",
+      "expected_memory": "Python",
+      "actual_tools": [
+        "recall",
+        "recall",
+        "recall"
+      ],
+      "retrieval_ok": true,
+      "tool_ok": true,
+      "answer": "I could not finish answering within the tool-call limit.",
+      "answer_ok": false,
+      "declines_answer": false,
+      "latency_ms": 88067.44,
+      "tokens": 78,
+      "error": null
+    },
+    {
+      "id": "q5",
+      "question": "Hello!",
+      "type": "known",
+      "expected_tool": "none",
+      "expected_answer": "",
+      "expected_memory": "",
+      "actual_tools": [],
+      "retrieval_ok": null,
+      "tool_ok": true,
+      "answer": "Hello! How can I help you today?",
+      "answer_ok": true,
+      "declines_answer": false,
+      "latency_ms": 23642.0,
+      "tokens": 9,
+      "error": null
+    },
+    {
+      "id": "q6",
+      "question": "What is Python?",
+      "type": "known",
+      "expected_tool": "none",
+      "expected_answer": "",
+      "expected_memory": "",
+      "actual_tools": [],
+      "retrieval_ok": null,
+      "tool_ok": true,
+      "answer": "Python is a high-level, interpreted programming language known for its simplicity and readability. It was created by Guido van Rossum and first released in 1991. Python emphasizes code readability with its notable use of significant whitespace and supports multiple programming paradigms, including object-oriented, procedural, and functional programming. It's widely used for web development, data analysis, artificial intelligence, scientific computing, automation, and more. Python has a large standard library and a vast ecosystem of third-party packages available through the Python Package Index (PyPI).",
+      "answer_ok": true,
+      "declines_answer": false,
+      "latency_ms": 93815.7,
+      "tokens": 86,
+      "error": null
+    },
+    {
+      "id": "q7",
+      "question": "Do I know Rust?",
+      "type": "unknown",
+      "expected_tool": "recall",
+      "expected_answer": "",
+      "expected_memory": "",
+      "actual_tools": [
+        "recall"
+      ],
+      "retrieval_ok": true,
+      "tool_ok": true,
+      "answer": "Based on the information I have, there's no indication that you know Rust. I recall that you primarily write your projects in Python, which suggests your main programming language is Python rather than Rust.",
+      "answer_ok": null,
+      "declines_answer": false,
+      "latency_ms": 109708.46,
+      "tokens": 224,
+      "error": null
+    },
+    {
+      "id": "q8",
+      "question": "What is my favorite programming language?",
+      "type": "unknown",
+      "expected_tool": "recall",
+      "expected_answer": "",
+      "expected_memory": "",
+      "actual_tools": [
+        "recall",
+        "recall",
+        "recall"
+      ],
+      "retrieval_ok": true,
+      "tool_ok": true,
+      "answer": "I could not finish answering within the tool-call limit.",
+      "answer_ok": null,
+      "declines_answer": false,
+      "latency_ms": 75023.48,
+      "tokens": 84,
+      "error": null
+    }
+  ]
+}

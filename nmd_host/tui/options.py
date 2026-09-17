@@ -97,7 +97,7 @@ COMMAND_OPTIONS: tuple[CommandOption, ...] = (
     ),
     # ---- Config ----------------------------------------------------------
     CommandOption(
-        "/settings", "Edit nebulonmind.cfg settings", category="Config"
+        "/settings", "Edit nebulonmd.cfg settings", category="Config"
     ),
     CommandOption(
         "/credentials",
@@ -147,7 +147,7 @@ def find(query: str) -> list[CommandOption]:
 def resolve(text: str) -> tuple[CommandOption | None, str, str]:
     """Resolve typed text to ``(option, args, unmatched_text)``.
 
-    ``"/cr sathya"`` -> ``(/create option, "sathya", "")``.
+    ``"/cr nmd_user_01"`` -> ``(/create option, "nmd_user_01", "")``.
     A normal chat message returns ``(None, "", text)``.
     """
     text = (text or "").strip()

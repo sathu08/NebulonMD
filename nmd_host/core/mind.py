@@ -71,7 +71,16 @@ class NebulonMind:
         doc = memory.to_truth_doc()
         self.truth.create(doc)
         try:
-            self.vector.update(memory.memory_id, memory.content.text)
+            self.vector.update(
+                memory.memory_id,
+                memory.content.text,
+                {
+                    "app": "nebulonmind",
+                    "memory_id": memory.memory_id,
+                    "category": memory.classification.category,
+                },
+                memory.classification.lang or "en",
+            )
             self.graph.relate_memory(memory)
         except Exception as exc:
             self._compensate(memory.memory_id)
@@ -97,7 +106,16 @@ class NebulonMind:
         doc = updated.to_truth_doc()
         self.truth.create(doc)
         try:
-            self.vector.update(memory_id, updated.content.text)
+            self.vector.update(
+                memory_id,
+                updated.content.text,
+                {
+                    "app": "nebulonmind",
+                    "memory_id": memory_id,
+                    "category": updated.classification.category,
+                },
+                updated.classification.lang or "en",
+            )
             self.graph.relate_memory(updated)
         except Exception as exc:
             self._compensate(memory_id)

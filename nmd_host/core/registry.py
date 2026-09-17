@@ -113,7 +113,7 @@ class NebulonDBUserRegistry(UserRegistry):
                 doc = json.loads(record.get("text") or "")
             except (TypeError, ValueError):
                 continue
-            if isinstance(doc, dict):
+            if isinstance(doc, dict) and "username" in doc and "unique_id" in doc:
                 rows.append(doc)
         return rows
 

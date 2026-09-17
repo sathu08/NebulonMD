@@ -108,9 +108,10 @@ segment per user (`user_{user_id}`) for multi-tenant isolation.
 
 | Store | Corpus | Engine | What it holds |
 |---|---|---|---|
-| `TruthStore` | `mind_truth` | cosmos | One document per memory; the full `Memory` JSON lives in the `text` column (the engine only persists `{text, lang, type, created_at}` and assigns its own integer `_id`), so reads scan the segment, parse JSON and match on `memory_id`. |
-| `VectorStore` | `mind_semantic` | orbit | One embedding per memory, computed server-side (`is_precomputed=False`); the record's label carries the `memory_id`. |
+| `TruthStore` | `mind_truth` | cosmos | One document per memory; the full `Memory` JSON lives in the `text` column with `doc_type=chat_memory` (`doc` for uploads), so reads scan the segment, parse JSON and match on `memory_id`. |
+| `VectorStore` | `mind_semantic` | orbit | One embedding per memory, computed server-side (`is_precomputed=False`); the record's label carries the `memory_id`, plus caller extras (`memory_id`, `category`). |
 | `GraphStore` | `mind_semantic` | orbit Mesh | Entities as nodes (auto-resolved by label); each memory is a node linked to its entities via `HAS_ENTITY`; user relationships become directed entity → entity edges. Writes are idempotent. |
+| `ChatHistoryStore` | `mind_chats` | cosmos | One document per chat transcript (`doc_type=chat_history`), COSMOS-only — never embedded, so raw chit-chat can't pollute semantic recall. Backs `/chats`; `/agent/chat` auto-saves session transcripts best-effort. |
 
 Reads for the graph are *derived from the truth store* (the API exposes no
 label → node resolution), so `delete_memory` is a no-op: deleting a memory's
@@ -181,7 +182,7 @@ Conversation ──► MemoryDecisionEngine ──► validated MemoryDecisions
 | `converter.py` | `candidate_to_memory()` — the only place decision output meets the `Memory` model |
 | `validation.py` | per-item sanitization: parse, drop empty/out-of-range/invalid, fix entities, dedupe |
 | `bridge.py` | `MemoryIntelligence` facade: conversation → decisions → store; accepts a repository or a `NebulonMind` |
-| `providers.py` | `LLMProvider` protocol; OpenAI / Anthropic / Gemini / Qwen / Ollama adapters; `provider_from_env()` |
+| `providers.py` | `LLMProvider` protocol; OpenAI / Anthropic / Gemini / Qwen / Nvidia / Ollama / OpenRouter / Other adapters; `provider_from_env()` |
 
 The extraction engine is pure — no storage, no network. Persistence is the
 bridge's job. Extraction never requires an LLM: the rule-based extractor is
@@ -378,14 +379,32 @@ bodies by default.
 
 `nmd_host/intelligence/providers.py` defines one `LLMProvider` protocol
 (`complete` / `structured` → `LLMResponse{text, provider}`) and swappable,
-optional-dependency adapters — OpenAI, Ollama, Qwen, Anthropic, Gemini —
-selected via `NMD_LLM_PROVIDER`. Adapters never leak SDK-specific shapes and
-raise only the typed `LLM*Error` hierarchy (`LLMTimeoutError`,
-`LLMRateLimitError`, `LLMTokenLimitError`, `LLMUnavailableError`,
-`LLMInvalidResponseError`), classified from SDK exceptions by type
-name/message. `provider_from_env()` wraps the adapter in a bounded,
-exponential-backoff `RetryingLLMProvider` on rate limits
+optional-dependency adapters — OpenAI, Ollama, Qwen, Nvidia, Anthropic,
+Gemini, OpenRouter, Other — selected via `NMD_LLM_PROVIDER`. Adapters never
+leak SDK-specific shapes and raise only the typed `LLM*Error` hierarchy
+(`LLMTimeoutError`, `LLMRateLimitError`, `LLMTokenLimitError`,
+`LLMUnavailableError`, `LLMInvalidResponseError`), classified from SDK
+exceptions by type name/message. `provider_from_env()` wraps the adapter in a
+bounded, exponential-backoff `RetryingLLMProvider` on rate limits
 (`NMD_LLM_MAX_RETRIES`).
+
+`other` is the generic OpenAI-compatible endpoint for any custom model host:
+set `NMD_LLM_PROVIDER=other` with `NMD_LLM_MODEL`, `NMD_LLM_API_KEY` and
+`NMD_LLM_BASE_URL`. Model and base URL may also live in `nebulonmd.cfg`
+under `[llm]` (`nmd_llm_model` / `nmd_llm_base_url`); the API key always stays
+in `.env`, never in the cfg:
+
+```ini
+# nebulonmd.cfg [llm]
+nmd_llm_provider = other
+nmd_llm_model = my-org/my-model
+nmd_llm_base_url = https://llm.example.com/v1
+```
+
+```bash
+# .env
+NMD_LLM_API_KEY=sk-...
+```
 
 Both the extraction layer and the agent reuse this single provider —
 extraction via `NMD_LLM_PROVIDER`/`NMD_LLM_MODEL`, the agent via the same
@@ -411,7 +430,7 @@ auto-delete sweep `auto_delete_expired` — daily by default (`0 3 * * *`).
 Schedules live as constants in `nmd_host/utils/constants.py`
 (`MEMORY_CONSOLIDATION_CRON_DEFAULT`, `WEEKLY_SUMMARY_CRON_DEFAULT`,
 `AUTO_DELETE_CRON_DEFAULT`); the auto-delete cron is overridable via
-`nebulonmind.cfg` → `[lifecycle] nmd_lifecycle_auto_cleanup_cron`.
+`nebulonmd.cfg` → `[lifecycle] nmd_lifecycle_auto_cleanup_cron`.
 Manual triggers accept any user and are exposed as API endpoints.
 
 The **auto-delete sweep** is the only scheduled job that deletes: gated by
@@ -544,9 +563,10 @@ health, metrics, OpenAPI or the config endpoint (asserted by tests).
 
 Configuration is environment-driven from `.env` (see `nmd_host/core/config.py`).
 
-* **Backend connection** (`NebulonDBConfig`) — `NEBULONDB_API_HOST/PORT`,
-  `NEBULONDB_USERNAME/PASSWORD`, `NEBULONDB_API_SCHEME`,
-  `NEBULONDB_API_{CONNECT,READ,WRITE}_TIMEOUT` (explicit per-phase timeouts).
+* **Backend connection** (`NebulonDBConfig`) — `NDB_API_HOST/PORT`
+  (legacy `NEBULONDB_API_HOST/PORT` still accepted),
+  `NEBULONDB_USERNAME/PASSWORD`, `NDB_API_SCHEME`,
+  `NDB_API_{CONNECT,READ,WRITE}_TIMEOUT` (explicit per-phase timeouts).
 * **Service** (`ServiceConfig`) — `NMD_ENV`, `NMD_API_CORS_ORIGINS`,
   `NMD_API_MAX_BODY_BYTES`, `NMD_API_MAX_TOP_K`,
   `NMD_API_MAX_CONTEXT_CHARACTERS`, `NMD_API_RATE_LIMIT_PER_MINUTE`,
@@ -554,7 +574,8 @@ Configuration is environment-driven from `.env` (see `nmd_host/core/config.py`).
   `NMD_EXPECTED_BACKEND_VERSION`, `NMD_API_WORKERS`,
   `NMD_API_GRACEFUL_SHUTDOWN_SECONDS`.
 * **LLM** — `NMD_LLM_PROVIDER`, `NMD_LLM_API_KEY`, `NMD_LLM_MODEL`,
-  `NMD_LLM_TIMEOUT`, `NMD_LLM_MAX_RETRIES`.
+  `NMD_LLM_BASE_URL` (required for `NMD_LLM_PROVIDER=other`), `NMD_LLM_TIMEOUT`,
+  `NMD_LLM_MAX_RETRIES`.
 * **Agent** — `NMD_AGENT_MODEL`, `NMD_AGENT_MAX_TURNS`, `NMD_AGENT_MAX_RECALL`,
   `NMD_AGENT_TEMPERATURE`, `NMD_AGENT_MAX_SESSIONS`,
   `NMD_AGENT_SESSION_TTL_SECONDS`, `NMD_AGENT_SYSTEM_PROMPT`.
@@ -566,7 +587,7 @@ Configuration is environment-driven from `.env` (see `nmd_host/core/config.py`).
   default `0 3 * * *`).
 * **Background agents** — `NMD_BACKGROUND_USER`.
 
-Operational settings are also readable from `nebulonmind.cfg` (INI, loaded into
+Operational settings are also readable from `nebulonmd.cfg` (INI, loaded into
 the environment at startup by `_load_cfg`; secrets stay in `.env`). Shared
 defaults — hosts/ports, graceful shutdown, cron schedules, branding — live in
 `nmd_host/utils/constants.py` so every module imports the same value instead of

@@ -85,18 +85,18 @@ def test_api_repository_crud_search_relate(api_client, unique_user):
     mind = NebulonMind(user_id=unique_user, client=api_client)
     repo = NebulonMindRepository(mind)
 
-    memory = make_memory("My name is Sathya", entities=["Sathya"], user_id=unique_user)
+    memory = make_memory("My name is nmd001", entities=["nmd001"], user_id=unique_user)
     created = repo.create(memory)
     assert created.memory_id is not None
-    assert repo.get(created.memory_id).content.text == "My name is Sathya"
+    assert repo.get(created.memory_id).content.text == "My name is nmd001"
 
-    updated = repo.update(created.memory_id, {"content": {"text": "My name is Sathya Kumar"}})
-    assert repo.get(created.memory_id).content.text == "My name is Sathya Kumar"
+    updated = repo.update(created.memory_id, {"content": {"text": "My name is nmd001 Kumar"}})
+    assert repo.get(created.memory_id).content.text == "My name is nmd001 Kumar"
 
     repo.relate(created.memory_id, "NebulonMind")
     assert "NebulonMind" in repo.get(created.memory_id).entities
 
-    hits = repo.search("sathya kumar", top_k=3)
+    hits = repo.search("nmd001 kumar", top_k=3)
     assert hits and hits[0].memory_id == created.memory_id
 
     assert repo.delete(created.memory_id) is True

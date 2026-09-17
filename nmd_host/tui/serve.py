@@ -3,9 +3,11 @@
 Usage:
     ../NebulonDB/.venv/bin/python -m nmd_host.tui.serve
 
-Listens on ``NEBULONDMIND_API_HOST``/``NEBULONDMIND_API_PORT`` (default
+Listens on ``NMD_API_HOST``/``NMD_API_PORT`` (legacy
+``NEBULONDMIND_API_HOST``/``NEBULONDMIND_API_PORT`` still accepted; default
 ``0.0.0.0:9696``). The NebulonDB backend is reached via
-``NEBULONDB_API_*`` settings (default ``localhost:6969``). Start-up and
+``NDB_API_*`` settings (legacy ``NEBULONDB_API_*`` still accepted;
+default ``localhost:6969``). Start-up and
 shut-down are handled by the app lifespan in ``create_app``; this module
 only wires configuration and uvicorn.
 
@@ -35,8 +37,15 @@ from nmd_host.utils.constants import (
 
 
 logger = logging.getLogger("nmd_host.tui.serve")
-HOST = os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
-PORT = int(os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)))
+HOST = os.environ.get(
+    "NMD_API_HOST", os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
+)
+PORT = int(
+    os.environ.get(
+        "NMD_API_PORT",
+        os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)),
+    )
+)
 GRACEFUL_SHUTDOWN_SECONDS = int(
     os.environ.get(
         "NMD_API_GRACEFUL_SHUTDOWN_SECONDS", str(GRACEFUL_SHUTDOWN_SECONDS_DEFAULT)

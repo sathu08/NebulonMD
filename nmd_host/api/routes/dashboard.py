@@ -81,8 +81,15 @@ async def get_config() -> dict:
     """
     service = ServiceConfig.from_env()
     backend = NebulonDBConfig.from_env()
-    host = os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
-    port = int(os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)))
+    host = os.environ.get(
+        "NMD_API_HOST", os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
+    )
+    port = int(
+        os.environ.get(
+            "NMD_API_PORT",
+            os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)),
+        )
+    )
     return {
         "service": {
             "app_name": "NebulonMind",
@@ -122,11 +129,13 @@ async def get_config() -> dict:
 
 @router.put("/config")
 async def update_config(payload: dict) -> dict:
-    """Update select ``NMD_*`` / ``NEBULONDB_API_*`` values in ``.env``.
+    """Update select ``NMD_*`` / ``NDB_API_*`` values in ``.env``.
 
     The payload shape mirrors NebulonDB's dashboard (``{config: {section:
     {key: value}}}``). Only allow-listed environment variables are written
-    and values are coerced to strings. A service restart is required for the
+    (canonical short names — legacy ``NEBULONDB_API_*`` /
+    ``NEBULONDMIND_API_*`` values are still *read* as fallback) and values
+    are coerced to strings. A service restart is required for the
     running process to pick up the new values.
     """
     config = payload.get("config")
@@ -139,8 +148,8 @@ async def update_config(payload: dict) -> dict:
     def resolve_env(section: str, key: str) -> str | None:
         mapping = {
             "service": {
-                "host": "NEBULONDMIND_API_HOST",
-                "port": "NEBULONDMIND_API_PORT",
+                "host": "NMD_API_HOST",
+                "port": "NMD_API_PORT",
                 "workers": "NMD_API_WORKERS",
                 "env": "NMD_ENV",
                 "graceful_shutdown_seconds": "NMD_API_GRACEFUL_SHUTDOWN_SECONDS",
@@ -155,9 +164,9 @@ async def update_config(payload: dict) -> dict:
                 "allow_plaintext_http": "NMD_API_ALLOW_PLAINTEXT_HTTP",
             },
             "backend": {
-                "host": "NEBULONDB_API_HOST",
-                "port": "NEBULONDB_API_PORT",
-                "scheme": "NEBULONDB_API_SCHEME",
+                "host": "NDB_API_HOST",
+                "port": "NDB_API_PORT",
+                "scheme": "NDB_API_SCHEME",
             },
             "llm": {
                 "provider": "NMD_LLM_PROVIDER",

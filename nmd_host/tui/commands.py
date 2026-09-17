@@ -42,8 +42,15 @@ NMD_HOME = _nmd_home()
 
 _load_cfg()
 
-HOST = os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
-PORT = int(os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)))
+HOST = os.environ.get(
+    "NMD_API_HOST", os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
+)
+PORT = int(
+    os.environ.get(
+        "NMD_API_PORT",
+        os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)),
+    )
+)
 
 LOG_DIR = NMD_HOME / "logs"
 PID_FILE = NMD_HOME / "nebulonmind.pid"
@@ -51,9 +58,15 @@ SERVER_MODULE = "nmd_host.tui.serve"
 
 ENV_FILE = NMD_HOME / ".env"
 
-NEBULONDB_API_HOST = os.environ.get("NEBULONDB_API_HOST", NEBULONDB_API_HOST_DEFAULT)
+NEBULONDB_API_HOST = os.environ.get(
+    "NDB_API_HOST",
+    os.environ.get("NEBULONDB_API_HOST", NEBULONDB_API_HOST_DEFAULT),
+)
 NEBULONDB_API_PORT = int(
-    os.environ.get("NEBULONDB_API_PORT", str(NEBULONDB_API_PORT_DEFAULT))
+    os.environ.get(
+        "NDB_API_PORT",
+        os.environ.get("NEBULONDB_API_PORT", str(NEBULONDB_API_PORT_DEFAULT)),
+    )
 )
 SKIP_BACKEND_CHECK = os.environ.get("NMD_SKIP_BACKEND_CHECK", "false").lower() in (
     "true",
@@ -174,7 +187,6 @@ def ensure_backend_credentials() -> bool:
     else:
         _out(f".env exists but NEBULONDB_USERNAME / NEBULONDB_PASSWORD are missing.")
 
-    _out()
     choice = input(
         "Enter credentials now (saved to .env) or create them manually? "
         "[enter to type them / 'skip']: "
@@ -241,6 +253,16 @@ def start_server(foreground: bool = False) -> bool:
         _out("		(binds 0.0.0.0:6969; port in `nebulondb.cfg` `[server] port`)")
         _out("")
         _out("NebulonMind will NOT start until the NebulonDB server is up.")
+        _out("")
+        return False
+
+    # ----- NEBULONMD_HOME check -----
+    actual_home = os.environ.get("NEBULONMD_HOME")
+    if not actual_home:
+        _out("")
+        _out("ERROR ⛔  NEBULONMD_HOME IS NOT SET")
+        _out("")
+        _out("NebulonMind will NOT start until NEBULONMD_HOME is set.")
         _out("")
         return False
 

@@ -198,16 +198,18 @@ class NebulonDBClient:
         """Ensure every storage corpus exists (idempotent, startup).
 
         Runs at service startup so the first memory write/recall never
-        fails with ``Corpus 'mind_truth'/'mind_semantic' not found in
-        metadata``. NebulonDB materialises the segments inside each corpus
-        lazily on first use, so only the corpus itself needs provisioning
-        here.
+        fails with ``Corpus 'mind_truth'/'mind_semantic'/'mind_chats' not
+        found in metadata``. NebulonDB materialises the segments inside
+        each corpus lazily on first use, so only the corpus itself needs
+        provisioning here.
         """
         from ..stores.truth_store import TruthStore
         from ..stores.vector_store import VectorStore
+        from ..stores.chat_history_store import ChatHistoryStore
 
         self.ensure_corpus(TruthStore.CORPUS, "cosmos")
         self.ensure_corpus(VectorStore.CORPUS, "orbit")
+        self.ensure_corpus(ChatHistoryStore.CORPUS, "cosmos")
 
     def list_segment(
         self, corpus: str, ndb_type: str
@@ -254,7 +256,7 @@ class NebulonDBClient:
             corpus,
             segment,
             ndb_type,
-            records=[{"text": "{}"}],
+            records=[{"text": '{"_seed": true}'}],
             set_columns=set_columns or ["text"],
             is_precomputed=is_precomputed,
         )
@@ -271,8 +273,15 @@ class NebulonDBClient:
         records: List[Dict[str, Any]],
         set_columns: Optional[List[str]] = None,
         is_precomputed: Optional[bool] = None,
+        lang_type: Optional[str] = None,
+        doc_type: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Insert records into a segment (cosmos: docs, orbit: text to embed)."""
+        """Insert records into a segment (cosmos: docs, orbit: text to embed).
+
+        ``metadata`` (optional) is merged into every record server-side;
+        a per-record ``metadata`` dict inside ``records`` wins per row.
+        """
         payload: Dict[str, Any] = {
             "corpus_name": corpus,
             "segment_name": segment,
@@ -282,6 +291,13 @@ class NebulonDBClient:
         }
         if is_precomputed is not None:
             payload["is_precomputed"] = is_precomputed
+        if lang_type is not None:
+            payload["lang_type"] = lang_type
+        if doc_type is not None:
+            payload["doc_type"] = doc_type
+        if metadata is not None:
+            payload["metadata"] = metadata
+        logger.debug(f"load_segment payload: {payload}")
         return self._request("POST", "/segment/load_segment", payload)
 
     def get_data(

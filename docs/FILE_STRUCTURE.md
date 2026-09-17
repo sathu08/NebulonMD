@@ -73,6 +73,7 @@ The project is organized into several logical layers:
 |---|---|
 | `AGENT_INTEGRATION.md` | Full guide for plugging NebulonMind into agents: three chat patterns (delegate, memory‑backend, hybrid), optional hardening knobs (`NMD_API_AUTH_TOKEN`, `NMD_AGENT_DURABLE_SESSIONS`, `NMD_BACKGROUND_PERSIST_STATE`, `NMD_LLM_EXTRACTOR`), and console asset exemption details. |
 | `ARCHITECTURE.md` | High‑level architecture diagram and narrative (memory object, storage mapping, phase overview, open design decisions). |
+| `MONITOR_PLAN.md` | nmd_monitor (own LangSmith-equivalent): trace/span model, NebulonDB `mind_traces` storage, API, config, P0 build log + P1-P3 roadmap. |
 | `FILE_STRUCTURE.md` *(this file)* | Detailed per‑file descriptions – the table you are reading now. |
 | *(other design notes are embedded in `README.md` and the individual module docstrings.)* |
 
@@ -87,14 +88,16 @@ The project is organized into several logical layers:
 | `nmd_host/api/errors.py` | Error enums and helpers used across the API layer. |
 | `nmd_host/api/middleware.py` | `AuthMiddleware` (optional Bearer/X‑API‑Key, public‑console exemption), `RateLimitMiddleware`, `BodyLimitMiddleware`, `MetricsMiddleware`, `MetricsRegistry`, `CorrelationIdMiddleware`, `RequestIdFilter`. |
 | `nmd_host/api/server.py` | `create_app()` – FastAPI application builder; mounts routers, static console files, `AuthMiddleware`, lifecycle startup/shutdown. |
-| `nmd_host/api/routes/` | Individual route modules: `dashboard.py`, `memory.py`, `search.py`, `agent/`, `background/`, `config.py`, `evaluation/`. |
+| `nmd_host/api/routes/` | Individual route modules: `dashboard.py`, `memory.py`, `search.py`, `agent/`, `background/`, `config.py`, `evaluation/`, `monitor.py` (nmd_monitor traces/stats). |
+| `nmd_host/monitor/` | nmd_monitor (own LangSmith-equivalent): `models.py` (Trace/Span/Stats), `recorder.py` (sampling+redaction), `store.py` (`mind_traces` NebulonDB/in-memory), `decorators.py` (`@monitored`), `evaluators.py` (online heuristics), `config.py` (`NMD_MONITOR_*`). |
 | `nmd_host/core/config.py` | `NebulonDBConfig` (`.env` + defaults) and `ServiceConfig` (CORS, rate‑limits, body limits, retries). Docstring now mentions optional `NMD_API_AUTH_TOKEN`. |
 | `nmd_host/core/models.py` | Pydantic models: `Memory`, `MemoryContent`, `Classification`, `Importance`, `RetentionPolicy`, `MemoryStatus`, `Lifecycle`, `Relationship`, `Provenance`. |
 | `nmd_host/core/repository.py` | `MemoryRepository` protocol + `InMemoryRepository` (fake for tests) + `NebulonMindRepository` (wraps the API). |
 | `nmd_host/core/mind.py` | `NebulonMind` facade – `store(memory)`, `recall(query, top_k)`, `relate(memory_id, entity)`, `delete(memory_id)`, `user/create_user`. |
-| `nmd_host/stores/truth_store.py` | `TruthStore` – API‑backed wrapper → COSMOS corpus `mind_truth`. `insert`, `get`, `update`, `delete`, `search`. |
-| `nmd_host/stores/vector_store.py` | `VectorStore` – API‑backed wrapper → ORBIT corpus `mind_semantic`. `insert_vec`, `search`, `delete`. Embeddings computed server‑side (`is_precomputed=False`). |
+| `nmd_host/stores/truth_store.py` | `TruthStore` – API‑backed wrapper → COSMOS corpus `mind_truth` (`doc_type=chat_memory`). `insert`, `get`, `update`, `delete`, `search`. |
+| `nmd_host/stores/vector_store.py` | `VectorStore` – API‑backed wrapper → ORBIT corpus `mind_semantic` (`doc_type=chat_memory`). `insert_vec`, `search`, `delete`. Embeddings computed server‑side (`is_precomputed=False`); caller extras (`memory_id`, `category`) stored as metadata. |
 | `nmd_host/stores/graph_store.py` | `GraphStore` – ORBIT Mesh wrapper. `add_edge`, `remove_edge`, `get_neighbors`, entity resolution by label. |
+| `nmd_host/stores/chat_history_store.py` | `ChatHistoryStore` / `InMemoryChatHistoryStore` – chat transcripts → COSMOS corpus `mind_chats` (`doc_type=chat_history`, COSMOS-only, never embedded). `history_store_for()` + `transcript_to_chat()` helpers. |
 | `nmd_host/agent/config.py` | `AgentConfig` – reads `NMD_AGENT_MAX_SESSIONS`, `NMD_AGENT_SESSION_TTL_SECONDS`, `NMD_AGENT_DURABLE_SESSIONS`. |
 | `nmd_host/agent/session.py` | `AgentSession` (Pydantic model) + `AgentSessionManager` – in‑process session registry, TTL, optional `store` (durable NebulonDB-backed). Step 1 change: warnings before `ValueError` raises. |
 | `nmd_host/agent/session_store.py` | `NebulonDBSessionStore` – persists sessions to NebulonDB corpus `mind_sessions`; best‑effort durability. |
@@ -115,7 +118,7 @@ The project is organized into several logical layers:
 | `nmd_host/intelligence/converter.py` | `MemoryCandidate → Step 1 Memory` conversion (populates `Memory` model fields). |
 | `nmd_host/intelligence/bridge.py` | `MemoryIntelligence` facade – `process(conversation)` → list of `MemoryCandidate`s, using either the rule extractor or the LLM extractor. |
 | `nmd_host/intelligence/validation.py` | Drops malformed / hallucinated decisions before they reach storage. |
-| `nmd_host/intelligence/providers.py` | `LLMProvider` protocol + concrete adapters: `OpenAIProvider`, `OllamaProvider`, `NvidiaProvider`, `QwenProvider`, `AnthropicProvider`, `GeminiProvider`, `RetryingLLMProvider`. |
+| `nmd_host/intelligence/providers.py` | `LLMProvider` protocol + concrete adapters: `OpenAIProvider`, `OllamaProvider`, `NvidiaProvider`, `QwenProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenRouterProvider`, `OtherProvider`, `RetryingLLMProvider`. |
 | `nmd_host/intelligence/engine.py` | `MemoryDecisionEngine` – receives a `Conversation`, returns a `List[MemoryDecision]`. |
 | `nmd_host/intelligence/schemas.py` | Pydantic models: `Conversation`, `Turn`, `MemoryCandidate`, `MemoryDecision`, `MemoryCategory` (enum). |
 | `nmd_host/lifecycle/config.py` | `LifecycleConfig` – env‑driven flags (`NMD_LIFECYCLE_AUTO_CLEANUP`, retention‑policy defaults). The scheduled auto-delete cron is read by `core/config.py` as `NMD_LIFECYCLE_AUTO_CLEANUP_CRON` (default from `utils/constants.AUTO_DELETE_CRON_DEFAULT`). |
@@ -161,9 +164,11 @@ The project is organized into several logical layers:
 
 | Variable | Default / Description |
 |---|---|
-| `NEBULONDB_API_HOST` | `localhost` |
-| `NEBULONDB_API_PORT` | `6969` |
-| `NEBULONDB_API_SCHEME` | `http` |
+| `NDB_API_HOST` | `localhost` (legacy `NEBULONDB_API_HOST` still accepted) |
+| `NDB_API_PORT` | `6969` (legacy `NEBULONDB_API_PORT` still accepted) |
+| `NDB_API_SCHEME` | `http` (legacy `NEBULONDB_API_SCHEME` still accepted) |
+| `NMD_API_HOST` | `0.0.0.0` — Mind bind host (legacy `NEBULONDMIND_API_HOST` still accepted) |
+| `NMD_API_PORT` | `9696` — Mind bind port (legacy `NEBULONDMIND_API_PORT` still accepted) |
 | `NEBULONDB_USERNAME` | `sathya` |
 | `NEBULONDB_PASSWORD` | `sathya08` |
 | `NMD_API_AUTH_TOKEN` | *empty* – set to a shared secret to require `Authorization: Bearer <token>` on API calls (health/metrics/OpenAPI stay public). |
@@ -172,9 +177,9 @@ The project is organized into several logical layers:
 | `NMD_LLM_EXTRACTOR` | `false` – when `true`, the LLM extractor is used; extractions falling back to the rules engine on failure or empty payload. |
 | `NMD_RANKING_SEMANTIC_WEIGHT`, `NMD_RANKING_IMPORTANCE_WEIGHT`, `NMD_RANKING_CONFIDENCE_WEIGHT`, `NMD_RANKING_RECENCY_WEIGHT` | Ranking‑engine weights (must sum to `1.0`). |
 | `NMD_CONTEXT_MAX_ITEMS`, `NMD_CONTEXT_MAX_CHARACTERS` | Bounded LLM‑context size. |
-| `NMD_TEMPORARY_TTL_SECONDS` | Default `30` days for `TEMPORARY` memories (also in `nebulonmind.cfg` `[lifecycle]`). |
+| `NMD_TEMPORARY_TTL_SECONDS` | Default `30` days for `TEMPORARY` memories (also in `nebulonmd.cfg` `[lifecycle]`). |
 | `NMD_LIFECYCLE_AUTO_CLEANUP` | `false` – when `true`, the scheduled `auto_delete_expired` background job deletes expired memories. |
-| `NMD_LIFECYCLE_AUTO_CLEANUP_CRON` | `0 3 * * *` – cron for the auto-delete sweep (5-field; set in `nebulonmind.cfg` `[lifecycle] nmd_lifecycle_auto_cleanup_cron`). |
+| `NMD_LIFECYCLE_AUTO_CLEANUP_CRON` | `0 3 * * *` – cron for the auto-delete sweep (5-field; set in `nebulonmd.cfg` `[lifecycle] nmd_lifecycle_auto_cleanup_cron`). |
 | `NMD_AGENT_MAX_SESSIONS` | `100` – max sessions per user. |
 | `NMD_AGENT_SESSION_TTL_SECONDS` | `3600` – session TTL in seconds. |
 | `NMD_API_CORS_ORIGINS` | `http://localhost:8000,http://127.0.0.1:8000` (adjust for production). |

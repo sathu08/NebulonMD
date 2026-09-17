@@ -91,3 +91,33 @@ def test_invalid_user_id_rejected(client):
     for path in ("/api/NebulonMind/chats", "/api/NebulonMind/chats/c1"):
         resp = client.get(path, params={"user_id": "/create"})
         assert resp.status_code == 400
+
+
+def test_transcript_to_chat_keeps_user_assistant_only():
+    from nmd_host.agent.schemas import AgentMessage
+    from nmd_host.stores.chat_history_store import transcript_to_chat
+
+    chat = transcript_to_chat(
+        "sess_1",
+        "user_001",
+        [
+            AgentMessage(role="user", content="My name is Sathya, I work with Python"),
+            AgentMessage(role="tool", content="remembered 1 memory"),
+            AgentMessage(role="assistant", content="Noted!"),
+        ],
+    )
+    assert chat["id"] == "sess_1"
+    assert chat["title"].startswith("My name is Sathya")
+    assert [m["role"] for m in chat["messages"]] == ["user", "assistant"]
+
+
+def test_history_store_for_unknown_user_is_lenient():
+    from nmd_host.stores.chat_history_store import InMemoryChatHistoryStore, history_store_for
+
+    provider = InMemoryServiceProvider()
+    store = history_store_for(provider, "ghost_user")
+    assert isinstance(store, InMemoryChatHistoryStore)
+    record = store.save({"id": "g1", "messages": [{"role": "user", "content": "hi"}]})
+    assert record["id"] == "g1"
+    # same provider + name resolves to the same store (upsert, not duplicate)
+    assert history_store_for(provider, "ghost_user").list() == [record]
