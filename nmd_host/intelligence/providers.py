@@ -41,6 +41,58 @@ _CONFIG_ERROR = (
 )
 
 
+# Non-secret LLM settings that may fall back to ``nebulonmd.cfg`` ``[llm]``.
+# ``NMD_LLM_API_KEY`` (and vendor keys) are deliberately ABSENT here: the key
+# is only ever read from ``.env`` / the process environment, never the cfg.
+_LLM_CFG_FALLBACK = {
+    "NMD_LLM_PROVIDER": "nmd_llm_provider",
+    "NMD_LLM_MODEL": "nmd_llm_model",
+    "NMD_LLM_BASE_URL": "nmd_llm_base_url",
+    "NMD_LLM_TIMEOUT": "nmd_llm_timeout",
+    "NMD_LLM_MAX_RETRIES": "nmd_llm_max_retries",
+    "NMD_LLM_THINKING": "nmd_llm_thinking",
+    "NMD_LLM_EXTRACTOR": "nmd_llm_extractor",
+    "NMD_LLM_EXTRACTOR_LENIENT": "nmd_llm_extractor_lenient",
+}
+
+
+def _ensure_llm_env_from_cfg() -> None:
+    """Seed missing/empty non-secret ``NMD_LLM_*`` env vars from cfg ``[llm]``.
+
+    Precedence: explicit ``.env`` / process environment always wins; the cfg
+    is only a fallback. ``NMD_LLM_API_KEY`` is never copied — it stays
+    ``.env``-only (see ``_SECRET_KEYS`` in ``nmd_host.core.config``).
+    Failures (no cfg file, no ``[llm]`` section) are silent: env-only
+    configuration keeps working.
+    """
+    try:
+        needed = [k for k in _LLM_CFG_FALLBACK if not (os.environ.get(k) or "").strip()]
+        if not needed:
+            return
+        from configparser import ConfigParser
+        from nmd_host.core.config import _default_cfg_path
+        cfg_file = _default_cfg_path()
+        if not cfg_file.exists():
+            return
+        parser = ConfigParser()
+        try:
+            parser.read(cfg_file, encoding="utf-8")
+        except Exception:
+            return
+        if not parser.has_section("llm"):
+            return
+        for env_key in needed:
+            cfg_key = _LLM_CFG_FALLBACK[env_key]
+            try:
+                value = parser.get("llm", cfg_key, fallback="")
+            except Exception:
+                value = ""
+            if value is not None and str(value).strip() != "":
+                os.environ[env_key] = str(value).strip()
+    except Exception:
+        pass
+
+
 class LLMProviderError(RuntimeError):
     """Base class for every LLM failure (predictable for Step 6 callers)."""
 
@@ -648,9 +700,12 @@ _PROVIDERS = {
 def provider_from_env(max_retries: Optional[int] = None) -> LLMProvider:
     """Build the provider named by ``NMD_LLM_PROVIDER`` from environment config.
 
+    Non-secret settings fall back to ``nebulonmd.cfg`` ``[llm]`` when the env
+    is empty; ``NMD_LLM_API_KEY`` is read from ``.env``/environment only.
     The adapter is wrapped in a ``RetryingLLMProvider`` (bounded backoff on
     rate limits, ``NMD_LLM_MAX_RETRIES`` attempts) unless ``max_retries=0``.
     """
+    _ensure_llm_env_from_cfg()
     name = os.environ.get("NMD_LLM_PROVIDER", "").strip().lower()
     if name not in _PROVIDERS:
         raise LLMProviderError(
@@ -671,7 +726,9 @@ def provider_from_env_with_model(
     """Build the provider from env, optionally overriding the model.
 
     If ``model`` is provided, it replaces the default model for that provider.
+    ``NMD_LLM_API_KEY`` is read from ``.env``/environment only, never cfg.
     """
+    _ensure_llm_env_from_cfg()
     name = os.environ.get("NMD_LLM_PROVIDER", "").strip().lower()
     if name not in _PROVIDERS:
         raise LLMProviderError(

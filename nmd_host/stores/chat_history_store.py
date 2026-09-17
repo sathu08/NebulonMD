@@ -98,12 +98,24 @@ class ChatHistoryStore:
         return record
 
     def delete(self, chat_id: str) -> bool:
-        for record in self._api.get_data(self.CORPUS, self._segment, "cosmos"):
+        try:
+            records = self._api.get_data(self.CORPUS, self._segment, "cosmos")
+        except Exception:
+            return False
+        for record in records:
+            if not isinstance(record, dict):
+                continue
             chat = _parse_record(record)
             if chat and chat.get("id") == chat_id:
-                return self._api.delete_record(
-                    self.CORPUS, self._segment, "cosmos", record["_id"]
-                )
+                rid = record.get("_id", record.get("id"))
+                if rid is None:
+                    return False
+                try:
+                    return self._api.delete_record(
+                        self.CORPUS, self._segment, "cosmos", rid
+                    )
+                except Exception:
+                    return False
         return False
 
     def _parse_all(self) -> List[Dict[str, Any]]:

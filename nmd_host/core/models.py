@@ -162,3 +162,10 @@ class Memory(BaseModel):
             for relationship in self.relationships:
                 relationship.source_memory_id = self.memory_id
         return self
+
+class FeedbackRequest(BaseModel):
+    """Feedback submission payload."""
+    trace_id: str
+    score: float = 0.0
+    tag: str = ""
+    comment: str = ""

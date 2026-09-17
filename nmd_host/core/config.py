@@ -35,6 +35,7 @@ from nmd_host.utils.env_helpers import env_bool as _env_bool
 from nmd_host.utils.env_helpers import env_float as _env_float
 from nmd_host.utils.env_helpers import env_int as _env_int
 from nmd_host.utils.constants import (
+    API_HOST_DEFAULT,
     API_PORT_DEFAULT,
     AUTO_DELETE_CRON_DEFAULT,
     DEFAULT_USERNAME,
@@ -42,6 +43,45 @@ from nmd_host.utils.constants import (
     NEBULONDB_API_HOST_DEFAULT,
     NEBULONDB_API_PORT_DEFAULT,
 )
+
+
+def _env_first(*names: str, default: str = "") -> str:
+    """First non-empty env value among ``names`` (new short name wins).
+
+    Precedence everywhere in this module: ``NDB_API_*`` before
+    ``NEBULONDB_API_*``, ``NMD_API_HOST/PORT`` before
+    ``NEBULONDMIND_API_HOST/PORT``. Old names keep working as fallback so
+    existing ``.env`` files and deployments never break on upgrade.
+    """
+    for name in names:
+        raw = os.environ.get(name, "")
+        if raw is not None and str(raw).strip() != "":
+            return str(raw).strip()
+    return default
+
+
+def _env_int_first(*names: str, default: int = 0) -> int:
+    for name in names:
+        raw = (os.environ.get(name) or "").strip()
+        if not raw:
+            continue
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            continue
+    return default
+
+
+def _env_float_first(*names: str, default: float = 0.0) -> float:
+    for name in names:
+        raw = (os.environ.get(name) or "").strip()
+        if not raw:
+            continue
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            continue
+    return default
 
 
 try:
@@ -121,24 +161,24 @@ SETTINGS_GROUPS: list = [
     {
         "id": "backend",
         "title": "Backend · NebulonDB",
-        "description": "How NebulonMind reaches the NebulonDB service.",
+        "description": "How NebulonMind reaches the NebulonDB service (short ndb_api_* keys; old nebulondb_api_* still accepted).",
         "keys": [
-            {"key": "nebulondb_api_host", "type": "str", "label": "Host"},
-            {"key": "nebulondb_api_port", "type": "int", "label": "Port"},
-            {"key": "nebulondb_api_scheme", "type": "str", "label": "Scheme",
+            {"key": "ndb_api_host", "type": "str", "label": "Host"},
+            {"key": "ndb_api_port", "type": "int", "label": "Port"},
+            {"key": "ndb_api_scheme", "type": "str", "label": "Scheme",
              "hint": "http or https."},
-            {"key": "nebulondb_api_connect_timeout", "type": "float", "label": "Connect timeout (s)"},
-            {"key": "nebulondb_api_read_timeout", "type": "float", "label": "Read timeout (s)"},
-            {"key": "nebulondb_api_write_timeout", "type": "float", "label": "Write timeout (s)"},
+            {"key": "ndb_api_connect_timeout", "type": "float", "label": "Connect timeout (s)"},
+            {"key": "ndb_api_read_timeout", "type": "float", "label": "Read timeout (s)"},
+            {"key": "ndb_api_write_timeout", "type": "float", "label": "Write timeout (s)"},
         ],
     },
     {
         "id": "server",
         "title": "Server · API",
-        "description": "The NebulonMind API service (default 0.0.0.0:9696).",
+        "description": "The NebulonMind API service (default 0.0.0.0:9696; short nmd_api_host/port keys, old nebulondmind_api_* still accepted).",
         "keys": [
-            {"key": "nebulondmind_api_host", "type": "str", "label": "Bind host"},
-            {"key": "nebulondmind_api_port", "type": "int", "label": "Port"},
+            {"key": "nmd_api_host", "type": "str", "label": "Bind host"},
+            {"key": "nmd_api_port", "type": "int", "label": "Port"},
             {"key": "nmd_api_workers", "type": "int", "label": "Workers"},
             {"key": "nmd_api_graceful_shutdown_seconds", "type": "int", "label": "Graceful shutdown (s)"},
             {"key": "nmd_api_max_body_bytes", "type": "int", "label": "Max body bytes"},
@@ -241,6 +281,19 @@ SETTINGS_GROUPS: list = [
         ],
     },
     {
+        "id": "monitor",
+        "title": "Monitor · nmd_monitor",
+        "description": "Own LangSmith-equivalent: persisted agent traces + stats (see docs/MONITOR_PLAN.md).",
+        "keys": [
+            {"key": "nmd_monitor_enabled", "type": "bool", "label": "Enabled"},
+            {"key": "nmd_monitor_project", "type": "str", "label": "Project"},
+            {"key": "nmd_monitor_sample_rate", "type": "float", "label": "Sample rate (0-1)"},
+            {"key": "nmd_monitor_redact", "type": "bool", "label": "Redact long bodies"},
+            {"key": "nmd_monitor_max_body_chars", "type": "int", "label": "Max body chars"},
+            {"key": "nmd_monitor_retention_days", "type": "int", "label": "Retention (days)"},
+        ],
+    },
+    {
         "id": "runner",
         "title": "Runner",
         "description": "Server launch behaviour.",
@@ -304,6 +357,7 @@ class NMDConfig:
         self._load_context()
         self._load_agent()
         self._load_background()
+        self._load_monitor()
         self._load_runner()
 
     # ------------------------------
@@ -319,6 +373,21 @@ class NMDConfig:
     def _raw(self, section: str, key: str) -> str:
         return self._config.get(section, key, fallback="")
 
+    def _raw_first(self, section: str, keys: Sequence[str], fallback: str = "") -> str:
+        """First non-empty cfg value among ``keys`` (new short name wins).
+
+        Mirrors :func:`_env_first` for the INI file: e.g. ``ndb_api_host``
+        before ``nebulondb_api_host``. Old keys keep working as fallback.
+        """
+        for key in keys:
+            try:
+                value = self._config.get(section, key, fallback=None)
+            except Exception:
+                value = None
+            if value is not None and str(value).strip() != "":
+                return str(value).strip()
+        return fallback
+
     def _getint(self, section: str, key: str, fallback: int = 0) -> int:
         try:
             return int(self._raw(section, key).strip() or str(fallback))
@@ -330,6 +399,34 @@ class NMDConfig:
             return float(self._raw(section, key).strip() or str(fallback))
         except (ValueError, TypeError):
             return fallback
+
+    def _getint_first(self, section: str, keys: Sequence[str], fallback: int = 0) -> int:
+        for key in keys:
+            try:
+                value = self._config.get(section, key, fallback=None)
+            except Exception:
+                value = None
+            if value is None or str(value).strip() == "":
+                continue
+            try:
+                return int(str(value).strip())
+            except (ValueError, TypeError):
+                continue
+        return fallback
+
+    def _getfloat_first(self, section: str, keys: Sequence[str], fallback: float = 0.0) -> float:
+        for key in keys:
+            try:
+                value = self._config.get(section, key, fallback=None)
+            except Exception:
+                value = None
+            if value is None or str(value).strip() == "":
+                continue
+            try:
+                return float(str(value).strip())
+            except (ValueError, TypeError):
+                continue
+        return fallback
 
     def _getbool(self, section: str, key: str, fallback: bool = False) -> bool:
         value = self._raw(section, key).strip().lower()
@@ -480,27 +577,35 @@ class NMDConfig:
         self.PID_FILE = self.NMD_HOME / "nebulonmind.pid"
 
     def _load_backend(self):
-        self.NEBULONDB_API_HOST = self._config.get("backend", "NEBULONDB_API_HOST")
-        self.NEBULONDB_API_PORT = self._getint(
-            "backend", "NEBULONDB_API_PORT", NEBULONDB_API_PORT_DEFAULT
+        # Canonical short keys (ndb_api_*); legacy nebulondb_api_* accepted.
+        self.NEBULONDB_API_HOST = self._raw_first(
+            "backend", ("NDB_API_HOST", "NEBULONDB_API_HOST"),
+            fallback=NEBULONDB_API_HOST_DEFAULT,
         )
-        self.NEBULONDB_API_SCHEME = self._config.get("backend", "NEBULONDB_API_SCHEME")
-        self.NEBULONDB_API_CONNECT_TIMEOUT = self._getfloat(
-            "backend", "NEBULONDB_API_CONNECT_TIMEOUT", 5.0
+        self.NEBULONDB_API_PORT = self._getint_first(
+            "backend", ("NDB_API_PORT", "NEBULONDB_API_PORT"), NEBULONDB_API_PORT_DEFAULT
         )
-        self.NEBULONDB_API_READ_TIMEOUT = self._getfloat(
-            "backend", "NEBULONDB_API_READ_TIMEOUT", 30.0
+        self.NEBULONDB_API_SCHEME = self._raw_first(
+            "backend", ("NDB_API_SCHEME", "NEBULONDB_API_SCHEME"), fallback="http"
         )
-        self.NEBULONDB_API_WRITE_TIMEOUT = self._getfloat(
-            "backend", "NEBULONDB_API_WRITE_TIMEOUT", 60.0
+        self.NEBULONDB_API_CONNECT_TIMEOUT = self._getfloat_first(
+            "backend", ("NDB_API_CONNECT_TIMEOUT", "NEBULONDB_API_CONNECT_TIMEOUT"), 5.0
+        )
+        self.NEBULONDB_API_READ_TIMEOUT = self._getfloat_first(
+            "backend", ("NDB_API_READ_TIMEOUT", "NEBULONDB_API_READ_TIMEOUT"), 30.0
+        )
+        self.NEBULONDB_API_WRITE_TIMEOUT = self._getfloat_first(
+            "backend", ("NDB_API_WRITE_TIMEOUT", "NEBULONDB_API_WRITE_TIMEOUT"), 60.0
         )
 
     def _load_server(self):
-        self.NEBULONDMIND_API_HOST = self._config.get(
-            "server", "NEBULONDMIND_API_HOST"
+        # Canonical short keys (nmd_api_host/port); legacy nebulondmind_* accepted.
+        self.NEBULONDMIND_API_HOST = self._raw_first(
+            "server", ("NMD_API_HOST", "NEBULONDMIND_API_HOST"),
+            fallback=API_HOST_DEFAULT,
         )
-        self.NEBULONDMIND_API_PORT = self._getint(
-            "server", "NEBULONDMIND_API_PORT", API_PORT_DEFAULT
+        self.NEBULONDMIND_API_PORT = self._getint_first(
+            "server", ("NMD_API_PORT", "NEBULONDMIND_API_PORT"), API_PORT_DEFAULT
         )
         self.NMD_API_WORKERS = self._getint("server", "NMD_API_WORKERS", 1)
         self.NMD_API_GRACEFUL_SHUTDOWN_SECONDS = self._getint(
@@ -615,6 +720,16 @@ class NMDConfig:
             "background", "NMD_BACKGROUND_PERSIST_STATE"
         )
 
+    def _load_monitor(self):
+        self.NMD_MONITOR_ENABLED = self._getbool("monitor", "NMD_MONITOR_ENABLED", True)
+        self.NMD_MONITOR_PROJECT = self._config.get(
+            "monitor", "NMD_MONITOR_PROJECT", fallback="default"
+        )
+        self.NMD_MONITOR_SAMPLE_RATE = self._getfloat("monitor", "NMD_MONITOR_SAMPLE_RATE", 1.0)
+        self.NMD_MONITOR_REDACT = self._getbool("monitor", "NMD_MONITOR_REDACT", True)
+        self.NMD_MONITOR_MAX_BODY_CHARS = self._getint("monitor", "NMD_MONITOR_MAX_BODY_CHARS", 2000)
+        self.NMD_MONITOR_RETENTION_DAYS = self._getint("monitor", "NMD_MONITOR_RETENTION_DAYS", 90)
+
     def _load_runner(self):
         self.NMD_SKIP_BACKEND_CHECK = self._getbool("runner", "NMD_SKIP_BACKEND_CHECK")
 
@@ -720,14 +835,26 @@ class NebulonDBConfig:
         _load_cfg()
         load_dotenv(str(env_file or _default_env_path()))
         return cls(
-            host=os.environ.get("NEBULONDB_API_HOST", NEBULONDB_API_HOST_DEFAULT),
-            port=_env_int("NEBULONDB_API_PORT", NEBULONDB_API_PORT_DEFAULT),
+            host=_env_first(
+                "NDB_API_HOST", "NEBULONDB_API_HOST",
+                default=NEBULONDB_API_HOST_DEFAULT,
+            ),
+            port=_env_int_first(
+                "NDB_API_PORT", "NEBULONDB_API_PORT",
+                default=NEBULONDB_API_PORT_DEFAULT,
+            ),
             username=os.environ.get("NEBULONDB_USERNAME", ""),
             password=os.environ.get("NEBULONDB_PASSWORD", ""),
-            scheme=os.environ.get("NEBULONDB_API_SCHEME", "http"),
-            connect_timeout=_env_float("NEBULONDB_API_CONNECT_TIMEOUT", 5.0),
-            read_timeout=_env_float("NEBULONDB_API_READ_TIMEOUT", 30.0),
-            write_timeout=_env_float("NEBULONDB_API_WRITE_TIMEOUT", 60.0),
+            scheme=_env_first("NDB_API_SCHEME", "NEBULONDB_API_SCHEME", default="http"),
+            connect_timeout=_env_float_first(
+                "NDB_API_CONNECT_TIMEOUT", "NEBULONDB_API_CONNECT_TIMEOUT", default=5.0
+            ),
+            read_timeout=_env_float_first(
+                "NDB_API_READ_TIMEOUT", "NEBULONDB_API_READ_TIMEOUT", default=30.0
+            ),
+            write_timeout=_env_float_first(
+                "NDB_API_WRITE_TIMEOUT", "NEBULONDB_API_WRITE_TIMEOUT", default=60.0
+            ),
         )
 
     @classmethod
@@ -777,6 +904,12 @@ class ServiceConfig:
     auth_token: str = ""
     background_persist_state: bool = False
     agent_model: str = ""
+    monitor_enabled: bool = True
+    monitor_project: str = "default"
+    monitor_sample_rate: float = 1.0
+    monitor_redact: bool = True
+    monitor_max_body_chars: int = 2000
+    monitor_retention_days: int = 90
 
     @classmethod
     def from_env(cls, env_file: Optional[Path] = None) -> "ServiceConfig":
@@ -812,6 +945,12 @@ class ServiceConfig:
             auth_token=os.environ.get("NMD_API_AUTH_TOKEN", "").strip(),
             background_persist_state=_env_bool("NMD_BACKGROUND_PERSIST_STATE"),
             agent_model=os.environ.get("NMD_AGENT_MODEL", "").strip(),
+            monitor_enabled=_env_bool("NMD_MONITOR_ENABLED", True),
+            monitor_project=os.environ.get("NMD_MONITOR_PROJECT", "default").strip() or "default",
+            monitor_sample_rate=_env_float("NMD_MONITOR_SAMPLE_RATE", 1.0),
+            monitor_redact=_env_bool("NMD_MONITOR_REDACT", True),
+            monitor_max_body_chars=_env_int("NMD_MONITOR_MAX_BODY_CHARS", 2000),
+            monitor_retention_days=_env_int("NMD_MONITOR_RETENTION_DAYS", 90),
         )
 
     @classmethod
@@ -841,6 +980,12 @@ class ServiceConfig:
             auth_token=os.environ.get("NMD_API_AUTH_TOKEN", "").strip(),
             background_persist_state=cfg.NMD_BACKGROUND_PERSIST_STATE,
             agent_model=cfg.NMD_AGENT_MODEL.strip(),
+            monitor_enabled=cfg.NMD_MONITOR_ENABLED,
+            monitor_project=cfg.NMD_MONITOR_PROJECT.strip() or "default",
+            monitor_sample_rate=cfg.NMD_MONITOR_SAMPLE_RATE,
+            monitor_redact=cfg.NMD_MONITOR_REDACT,
+            monitor_max_body_chars=cfg.NMD_MONITOR_MAX_BODY_CHARS,
+            monitor_retention_days=cfg.NMD_MONITOR_RETENTION_DAYS,
         )
 
 
@@ -881,8 +1026,9 @@ def validate_production_config(
             )
         if backend.scheme != "https" and not service.allow_plaintext_http:
             problems.append(
-                "NEBULONDB_API_SCHEME must be https in production (set "
-                "NMD_API_ALLOW_PLAINTEXT_HTTP=true only for isolated networks)"
+                "NDB_API_SCHEME (or legacy NEBULONDB_API_SCHEME) must be https "
+                "in production (set NMD_API_ALLOW_PLAINTEXT_HTTP=true only for "
+                "isolated networks)"
             )
     if service.rate_limit_per_minute <= 0:
         problems.append("NMD_API_RATE_LIMIT_PER_MINUTE must be > 0 in production")

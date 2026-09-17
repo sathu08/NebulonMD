@@ -354,6 +354,8 @@ class LLMStatusData(BaseModel):
     configured: bool = False
     model: Optional[str] = None
     error: Optional[str] = None
+    base_url: Optional[str] = None
+    has_key: bool = False
 
 
 # ---------------------------------------------------------------------- #
@@ -444,7 +446,7 @@ class EvaluationItemData(BaseModel):
     retrieval_ok: Optional[bool] = None
     tool_ok: Optional[bool] = None
     answer: str = ""
-    answer_ok: bool = False
+    answer_ok: Optional[bool] = None
     declines_answer: bool = False
     latency_ms: float = 0.0
     tokens: int = 0

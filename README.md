@@ -38,6 +38,7 @@ Conversation ──► Decision Engine ──► Lifecycle gate ──► Nebulo
 | [AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) | How to plug NebulonMind into agents — three chat patterns, auth options, caveats |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full architecture: layers, domain model, persistence, agent runtime, LLM providers, background agents |
 | [FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md) | Complete project file reference — top-level files, tests/, docs/, nmd_host/, key env vars, quick-start commands |
+| [MONITOR_PLAN.md](docs/MONITOR_PLAN.md) | nmd_monitor (own LangSmith-equivalent): persisted agent traces, stats, feedback/datasets plan + build log |
 
 ---
 
@@ -119,8 +120,8 @@ NEBULONDB_PASSWORD=...
 | `[llm]` | `nmd_llm_provider` | `nvidia` | `nvidia` \| `openai` \| `anthropic` \| `gemini` \| `qwen` \| `ollama` |
 | | `nmd_llm_model` | provider default | e.g. `nvidia/nemotron-3.5-lightning-30b-a3b` |
 | | `nmd_llm_timeout` / `nmd_llm_max_retries` | `60` / `3` | request tuning |
-| `[backend]` | `nebulondb_api_host` / `nebulondb_api_port` | `localhost` / `6969` | where NebulonDB runs |
-| `[server]` | `nebulondmind_api_host` / `nebulondmind_api_port` | `0.0.0.0` / `9696` | where Mind listens |
+| `[backend]` | `ndb_api_host` / `ndb_api_port` | `localhost` / `6969` | where NebulonDB runs (legacy `nebulondb_api_*` keys still accepted) |
+| `[server]` | `nmd_api_host` / `nmd_api_port` | `0.0.0.0` / `9696` | where Mind listens (legacy `nebulondmind_api_*` keys still accepted) |
 | `[agent]` | `nmd_agent_model` | (uses `nmd_llm_model`) | optional: separate model for agent tool-calling |
 | | `nmd_agent_temperature`, `nmd_agent_max_turns`, `nmd_agent_system_prompt` | — | agent-chat behaviour |
 | `[ranking]` | `nmd_ranking_*_weight` | sums to 1.0 | retrieval ranking signals |
@@ -218,6 +219,9 @@ Every route scopes to a registered username via `?user_id=` (or `username=` for 
 | | GET | `/background/status` | Scheduler status |
 | **Evaluation** | GET | `/evaluation/dataset` | Get bundled test dataset |
 | | POST | `/evaluation/run` | Run evaluation suite |
+| **Monitor** | GET | `/monitor/traces` | List persisted agent traces (nmd_monitor, see `docs/MONITOR_PLAN.md`) |
+| | GET | `/monitor/trace/{id}` | Full trace with spans |
+| | GET | `/monitor/stats` | Trace aggregates (latency, tools, errors) |
 | **LLM** | GET | `/llm/status` | Provider health + model info |
 
 #### Quick Examples

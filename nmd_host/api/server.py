@@ -115,6 +115,7 @@ from .service import (
 from .routes.dashboard import WEB_DIR, router as dashboard_router
 from .routes.config import router as config_router
 from .routes.chats import router as chats_router
+from .routes.monitor import router as monitor_router
 
 logger = logging.getLogger("nmd_host.api.server")
 
@@ -128,6 +129,7 @@ TAGS = [
     {"name": "Relationships", "description": "Entity linking through the existing relate() functionality (Phase 4.6)."},
     {"name": "Agent", "description": "Agent Runtime: stateless tool-calling chat over the memory tools (remember/recall)."},
     {"name": "Evaluation", "description": "Agent Evaluation: benchmark the agent over a dataset (retrieval, tool selection, answer correctness, hallucination, latency, tokens)."},
+    {"name": "Monitor", "description": "nmd_monitor: own LangSmith-equivalent — persisted agent traces, stats and (P1+) feedback/datasets. See docs/MONITOR_PLAN.md."},
     {"name": "Background", "description": "Background Agents: nightly memory consolidation (Memory Agent) and weekly work summaries (Task Agent), scheduled in-process; manual run triggers + scheduler status."},
     {"name": "User", "description": "Explicit username registration: a username is mapped to an opaque user_id via /user/create_user; /user/setup switches to an already-registered username. Unregistered usernames are rejected everywhere."},
     {"name": "Service", "description": "Health checks and service metadata (Phase 4.12)."},
@@ -1164,6 +1166,34 @@ def create_app(
                 logger.warning(
                     "agent chat history auto-save failed for %s: %s", user_id, exc
                 )
+        # nmd_monitor (P0): persist one trace per chat, best-effort.
+        # A monitor failure never fails the chat response.
+        try:
+            from ..monitor import MonitorRecorder
+            from ..monitor.store import monitor_store_for
+            from .tracing import request_id_var
+
+            recorder = MonitorRecorder()
+            thread_id = (
+                request.session_id or request.conversation_id
+                or (data.trace.trace_id if data.trace is not None else "")
+            )
+            llm_provider = getattr(llm, "provider", "") or ""
+            llm_model = getattr(llm, "model", None) or agent_model or ""
+            monitor_trace = recorder.from_chat(
+                data.trace,
+                user_id=user_id,
+                thread_id=thread_id,
+                request_id=request_id_var.get(),
+                provider=llm_provider,
+                model=llm_model,
+                input_text=request.text,
+                answer=data.answer,
+            )
+            if monitor_trace is not None:
+                monitor_store_for(provider, user_id).save(monitor_trace)
+        except Exception as exc:
+            logger.warning("nmd_monitor capture failed for %s: %s", user_id, exc)
         return AgentChatEnvelope(message="agent replied", data=data)
 
     # ------------------------------------------------------------------ #
@@ -1493,6 +1523,8 @@ def create_app(
 
         from ..intelligence.providers import provider_from_env
 
+        from ..intelligence.providers import _ensure_llm_env_from_cfg
+        _ensure_llm_env_from_cfg()  # env wins; cfg [llm] fills gaps (key stays .env-only)
         name = os.environ.get("NMD_LLM_PROVIDER", "").strip()
         provider = None
         error = None
@@ -1501,13 +1533,18 @@ def create_app(
                 provider = provider_from_env()
             except Exception as exc:
                 error = _redact_llm_error(str(exc))
+        model = getattr(provider, "model", None) if provider else None
+        if not model:
+            model = os.environ.get("NMD_LLM_MODEL", "").strip() or None
         return LLMStatusEnvelope(
             message="ok",
             data=LLMStatusData(
                 provider=name,
                 configured=provider is not None,
-                model=getattr(provider, "model", None) if provider else None,
+                model=model,
                 error=error,
+                base_url=os.environ.get("NMD_LLM_BASE_URL", "").strip() or None,
+                has_key=bool(os.environ.get("NMD_LLM_API_KEY", "").strip()),
             ),
         )
 
@@ -1529,6 +1566,11 @@ def create_app(
         chats_router,
         prefix="/api/NebulonMind",
         tags=["Chats"],
+    )
+    app.include_router(
+        monitor_router,
+        prefix="/api/NebulonMind/monitor",
+        tags=["Monitor"],
     )
     # Serve CSS/JS (and any other) console assets from web_dir under the
     # same prefix; the router routes registered above win on conflict.

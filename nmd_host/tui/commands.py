@@ -42,8 +42,15 @@ NMD_HOME = _nmd_home()
 
 _load_cfg()
 
-HOST = os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
-PORT = int(os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)))
+HOST = os.environ.get(
+    "NMD_API_HOST", os.environ.get("NEBULONDMIND_API_HOST", API_HOST_DEFAULT)
+)
+PORT = int(
+    os.environ.get(
+        "NMD_API_PORT",
+        os.environ.get("NEBULONDMIND_API_PORT", str(API_PORT_DEFAULT)),
+    )
+)
 
 LOG_DIR = NMD_HOME / "logs"
 PID_FILE = NMD_HOME / "nebulonmind.pid"
@@ -51,9 +58,15 @@ SERVER_MODULE = "nmd_host.tui.serve"
 
 ENV_FILE = NMD_HOME / ".env"
 
-NEBULONDB_API_HOST = os.environ.get("NEBULONDB_API_HOST", NEBULONDB_API_HOST_DEFAULT)
+NEBULONDB_API_HOST = os.environ.get(
+    "NDB_API_HOST",
+    os.environ.get("NEBULONDB_API_HOST", NEBULONDB_API_HOST_DEFAULT),
+)
 NEBULONDB_API_PORT = int(
-    os.environ.get("NEBULONDB_API_PORT", str(NEBULONDB_API_PORT_DEFAULT))
+    os.environ.get(
+        "NDB_API_PORT",
+        os.environ.get("NEBULONDB_API_PORT", str(NEBULONDB_API_PORT_DEFAULT)),
+    )
 )
 SKIP_BACKEND_CHECK = os.environ.get("NMD_SKIP_BACKEND_CHECK", "false").lower() in (
     "true",

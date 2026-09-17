@@ -73,6 +73,7 @@ The project is organized into several logical layers:
 |---|---|
 | `AGENT_INTEGRATION.md` | Full guide for plugging NebulonMind into agents: three chat patterns (delegate, memory‑backend, hybrid), optional hardening knobs (`NMD_API_AUTH_TOKEN`, `NMD_AGENT_DURABLE_SESSIONS`, `NMD_BACKGROUND_PERSIST_STATE`, `NMD_LLM_EXTRACTOR`), and console asset exemption details. |
 | `ARCHITECTURE.md` | High‑level architecture diagram and narrative (memory object, storage mapping, phase overview, open design decisions). |
+| `MONITOR_PLAN.md` | nmd_monitor (own LangSmith-equivalent): trace/span model, NebulonDB `mind_traces` storage, API, config, P0 build log + P1-P3 roadmap. |
 | `FILE_STRUCTURE.md` *(this file)* | Detailed per‑file descriptions – the table you are reading now. |
 | *(other design notes are embedded in `README.md` and the individual module docstrings.)* |
 
@@ -87,7 +88,8 @@ The project is organized into several logical layers:
 | `nmd_host/api/errors.py` | Error enums and helpers used across the API layer. |
 | `nmd_host/api/middleware.py` | `AuthMiddleware` (optional Bearer/X‑API‑Key, public‑console exemption), `RateLimitMiddleware`, `BodyLimitMiddleware`, `MetricsMiddleware`, `MetricsRegistry`, `CorrelationIdMiddleware`, `RequestIdFilter`. |
 | `nmd_host/api/server.py` | `create_app()` – FastAPI application builder; mounts routers, static console files, `AuthMiddleware`, lifecycle startup/shutdown. |
-| `nmd_host/api/routes/` | Individual route modules: `dashboard.py`, `memory.py`, `search.py`, `agent/`, `background/`, `config.py`, `evaluation/`. |
+| `nmd_host/api/routes/` | Individual route modules: `dashboard.py`, `memory.py`, `search.py`, `agent/`, `background/`, `config.py`, `evaluation/`, `monitor.py` (nmd_monitor traces/stats). |
+| `nmd_host/monitor/` | nmd_monitor (own LangSmith-equivalent): `models.py` (Trace/Span/Stats), `recorder.py` (sampling+redaction), `store.py` (`mind_traces` NebulonDB/in-memory), `decorators.py` (`@monitored`), `evaluators.py` (online heuristics), `config.py` (`NMD_MONITOR_*`). |
 | `nmd_host/core/config.py` | `NebulonDBConfig` (`.env` + defaults) and `ServiceConfig` (CORS, rate‑limits, body limits, retries). Docstring now mentions optional `NMD_API_AUTH_TOKEN`. |
 | `nmd_host/core/models.py` | Pydantic models: `Memory`, `MemoryContent`, `Classification`, `Importance`, `RetentionPolicy`, `MemoryStatus`, `Lifecycle`, `Relationship`, `Provenance`. |
 | `nmd_host/core/repository.py` | `MemoryRepository` protocol + `InMemoryRepository` (fake for tests) + `NebulonMindRepository` (wraps the API). |
@@ -162,9 +164,11 @@ The project is organized into several logical layers:
 
 | Variable | Default / Description |
 |---|---|
-| `NEBULONDB_API_HOST` | `localhost` |
-| `NEBULONDB_API_PORT` | `6969` |
-| `NEBULONDB_API_SCHEME` | `http` |
+| `NDB_API_HOST` | `localhost` (legacy `NEBULONDB_API_HOST` still accepted) |
+| `NDB_API_PORT` | `6969` (legacy `NEBULONDB_API_PORT` still accepted) |
+| `NDB_API_SCHEME` | `http` (legacy `NEBULONDB_API_SCHEME` still accepted) |
+| `NMD_API_HOST` | `0.0.0.0` — Mind bind host (legacy `NEBULONDMIND_API_HOST` still accepted) |
+| `NMD_API_PORT` | `9696` — Mind bind port (legacy `NEBULONDMIND_API_PORT` still accepted) |
 | `NEBULONDB_USERNAME` | `sathya` |
 | `NEBULONDB_PASSWORD` | `sathya08` |
 | `NMD_API_AUTH_TOKEN` | *empty* – set to a shared secret to require `Authorization: Bearer <token>` on API calls (health/metrics/OpenAPI stay public). |

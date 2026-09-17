@@ -563,9 +563,10 @@ health, metrics, OpenAPI or the config endpoint (asserted by tests).
 
 Configuration is environment-driven from `.env` (see `nmd_host/core/config.py`).
 
-* **Backend connection** (`NebulonDBConfig`) — `NEBULONDB_API_HOST/PORT`,
-  `NEBULONDB_USERNAME/PASSWORD`, `NEBULONDB_API_SCHEME`,
-  `NEBULONDB_API_{CONNECT,READ,WRITE}_TIMEOUT` (explicit per-phase timeouts).
+* **Backend connection** (`NebulonDBConfig`) — `NDB_API_HOST/PORT`
+  (legacy `NEBULONDB_API_HOST/PORT` still accepted),
+  `NEBULONDB_USERNAME/PASSWORD`, `NDB_API_SCHEME`,
+  `NDB_API_{CONNECT,READ,WRITE}_TIMEOUT` (explicit per-phase timeouts).
 * **Service** (`ServiceConfig`) — `NMD_ENV`, `NMD_API_CORS_ORIGINS`,
   `NMD_API_MAX_BODY_BYTES`, `NMD_API_MAX_TOP_K`,
   `NMD_API_MAX_CONTEXT_CHARACTERS`, `NMD_API_RATE_LIMIT_PER_MINUTE`,
