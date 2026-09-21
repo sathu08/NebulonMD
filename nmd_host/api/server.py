@@ -1357,7 +1357,7 @@ def create_app(
             "accuracy, retrieval accuracy, answer correctness, hallucination "
             "rate, latency and token usage. Requires a configured LLM provider "
             "(NMD_LLM_PROVIDER + key/model). The report is also saved under "
-            "evaluation/reports/."
+            "evaluation_reports/."
         ),
         response_model=EvaluationRunEnvelope,
         responses={503: {"description": "LLM provider not configured"}},
@@ -1392,7 +1392,7 @@ def create_app(
         items = request.items if request.items is not None else load_dataset()
         report = runner.run(items[: request.max_items], seed=request.seed)
         try:
-            save_report(report, dataset_name=request.dataset)
+            save_report(report, dataset_name=request.dataset, user_id=bundle.user_id)
         except Exception as exc:  # defensive: reports are best-effort
             logger.warning("evaluation report save failed: %s", exc)
         return EvaluationRunEnvelope(

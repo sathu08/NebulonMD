@@ -40,7 +40,7 @@ from nmd_host.core.models import (
 
 REPO_ROOT = _nmd_home()
 DATASET_PATH = REPO_ROOT / "unittest" / "evaluation" / "dataset.json"
-REPORTS_DIR = REPO_ROOT / "unittest" / "evaluation" / "reports"
+REPORTS_DIR = REPO_ROOT / "evaluation_reports"
 
 _DECLINE_MARKERS = (
     "don't know",
@@ -89,13 +89,20 @@ def load_dataset(path: Optional[Path] = None) -> List[dict]:
     return list(data)
 
 
-def save_report(report: dict, dataset_name: str = "dataset") -> Path:
-    """Persist a run's report as JSON under ``evaluation/reports/``."""
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    name = (
-        f"{dataset_name}-{time.strftime('%Y%m%d-%H%M%S')}.json"
-    )
-    path = REPORTS_DIR / name
+def _safe_user(user_id: str) -> str:
+    cleaned = "".join(
+        c if (c.isalnum() or c in ("-", "_")) else "_" for c in str(user_id or "")
+    ).strip("_")
+    return cleaned or "anonymous"
+
+
+def save_report(
+    report: dict, dataset_name: str = "dataset", user_id: str = ""
+) -> Path:
+    """Persist a run's report as ``evaluation_reports/<user>/<dataset>-<timestamp>.json``."""
+    user_dir = REPORTS_DIR / _safe_user(user_id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    path = user_dir / f"{dataset_name or 'dataset'}-{time.strftime('%Y%m%d-%H%M%S')}.json"
     path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     return path
 

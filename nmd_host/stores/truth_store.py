@@ -45,13 +45,12 @@ class TruthStore:
         self.delete(memory_id)
         
         # Extract lang and type from the document.
-        # doc_type is free-form on the backend and stored verbatim, so the
-        # value sent here is exactly what the dashboard shows: "chat_memory"
-        # for memories, "doc" for uploaded documents.
+        # doc_type must be a NebulonDB DocumentType enum value (Nova
+        # validates strictly): "chat" for memories, "other" for documents.
         classification = doc.get("classification", {})
         lang = classification.get("lang", "en")
         memory_type = classification.get("memory_type", "semantic")
-        type_ = "doc" if memory_type == "doc" else "chat_memory"
+        type_ = "other" if memory_type == "doc" else "chat"
         
         self._api.load_segment(
             self.CORPUS,

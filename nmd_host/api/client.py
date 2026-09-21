@@ -25,6 +25,30 @@ class NebulonDBError(RuntimeError):
     pass
 
 
+# NebulonDB Nova validates doc_type against a strict enum
+# (pdf/docx/txt/markdown/chat/chat_summary/important_chat/web_cache/
+# session/other). Legacy Mind senders use free-form names — translate once
+# here so no caller can 500 the backend with a stale label.
+_DOC_TYPE_MAP = {
+    "chat_memory": "chat",
+    "chat_history": "chat",
+    "monitor_trace": "other",
+    "doc": "other",
+    "document": "other",
+    "text": "txt",
+    "md": "markdown",
+}
+
+
+def _nova_doc_type(doc_type: Optional[str]) -> Optional[str]:
+    if doc_type is None:
+        return None
+    key = str(doc_type).strip().lower()
+    if not key:
+        return None
+    return _DOC_TYPE_MAP.get(key, key)
+
+
 class NebulonDBClient:
     """Thin HTTP client over the NebulonDB API v1 routes.
 
@@ -58,9 +82,16 @@ class NebulonDBClient:
         bounds the handshake phase.
         """
         config = self._config
+        # requests rejects non-positive timeouts outright (ValueError), which
+        # would blackhole EVERY backend call. A zero/negative timeout can only
+        # arrive via misconfiguration (e.g. NDB_API_*_TIMEOUT=0 in the
+        # environment), never intentionally — clamp to sane minimums.
+        connect = config.connect_timeout if config.connect_timeout > 0 else 5.0
+        read = config.read_timeout if config.read_timeout > 0 else 30.0
+        write = config.write_timeout if config.write_timeout > 0 else 60.0
         if method in ("POST", "PUT", "PATCH", "DELETE"):
-            return (config.connect_timeout, config.write_timeout)
-        return (config.connect_timeout, config.read_timeout)
+            return (connect, write)
+        return (connect, read)
 
     @staticmethod
     def _is_transient(exc: NebulonDBError, status: Optional[int]) -> bool:
@@ -293,6 +324,7 @@ class NebulonDBClient:
             payload["is_precomputed"] = is_precomputed
         if lang_type is not None:
             payload["lang_type"] = lang_type
+        doc_type = _nova_doc_type(doc_type)
         if doc_type is not None:
             payload["doc_type"] = doc_type
         if metadata is not None:
