@@ -61,7 +61,7 @@ Two rules keep the architecture honest:
   imports `ndb_host`; there is no local memory database, no local vector
   store, no SQLite, no Redis. NebulonDB is the only persistent memory store.
   NebulonMind may keep local operational/configuration files — `.env` (config
-  endpoint) and `evaluation/reports/` (benchmark output) — but these are not
+   endpoint) and `evaluation_reports/` (benchmark output) — but these are not
   memory storage.
 * **The AI layer never touches stores directly.** It talks to
   `MemoryRepository` (protocol). NebulonDB-backed persistence is reached
@@ -457,7 +457,7 @@ dataset:
 * `metrics.py` — pure, dependency-free metric functions:
   `tool_selection_accuracy`, `retrieval_accuracy`, `answer_correctness`,
   `hallucination_rate`, `latency_stats`, `token_stats`, `summarize`.
-* Reports are saved as JSON under `evaluation/reports/` (timestamped).
+* Reports are saved as JSON under `evaluation_reports/` (timestamped).
 
 ## API service (port 9696)
 

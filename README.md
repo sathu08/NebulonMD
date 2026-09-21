@@ -108,6 +108,27 @@ Two files live in the install directory (`~/.nebulonmind`):
 NMD_LLM_API_KEY=nvapi-...        # key for the provider chosen below
 NEBULONDB_USERNAME=...           # NebulonDB admin credentials from step above
 NEBULONDB_PASSWORD=...
+# NMD_API_AUTH_TOKEN=...         # optional: set to require Bearer/X-API-Key auth (see below)
+```
+
+#### Optional API auth (`NMD_API_AUTH_TOKEN`) — only if you need it
+
+Disabled when empty (local-dev default). When set, every data route requires
+`Authorization: Bearer <token>` or `X-API-Key: <token>` (`/health`, `/metrics`,
+`/docs`, console assets stay public).
+
+```bash
+# 1. Generate (WSL/linux)
+openssl rand -hex 32
+# python alt: python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# 2. Add to .env and restart Mind
+NMD_API_AUTH_TOKEN=<paste-generated>
+nebulonmind restart
+
+# 3. Client must send the same token, e.g.
+curl -H "Authorization: Bearer <paste-generated>" \
+  "http://localhost:9696/api/NebulonMind/search?q=test&user_id=nmd001"
 ```
 
 > Provider keys are never written to the cfg file. Get a free NVIDIA NIM key at

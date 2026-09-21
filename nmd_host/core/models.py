@@ -137,14 +137,14 @@ class Memory(BaseModel):
         column (the engine only persists ``{text, lang, type, created_at}``).
         """
         doc = self.model_dump(mode="json")
-        # Add top-level lang/type for NebulonDB dashboard visibility
-        # Use NebulonDB document types (chat/doc/other) for 'type' field
+        # Add top-level lang/type for NebulonDB dashboard visibility.
+        # 'type' must be a NebulonDB DocumentType enum value (Nova validates
+        # it strictly): memories -> "chat", uploaded documents -> "other".
         classification = doc.get("classification", {})
         if classification.get("lang"):
             doc["lang"] = classification["lang"]
         memory_type = classification.get("memory_type", "semantic")
-        # Display type mirrors the doc_type sent to NebulonDB verbatim.
-        doc["type"] = "doc" if memory_type == "doc" else "chat_memory"
+        doc["type"] = "other" if memory_type == "doc" else "chat"
         return doc
 
     @classmethod
