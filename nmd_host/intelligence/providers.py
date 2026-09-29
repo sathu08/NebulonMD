@@ -69,14 +69,12 @@ def _ensure_llm_env_from_cfg() -> None:
         needed = [k for k in _LLM_CFG_FALLBACK if not (os.environ.get(k) or "").strip()]
         if not needed:
             return
-        from configparser import ConfigParser
-        from nmd_host.core.config import _default_cfg_path
+        from nmd_host.core.config import _default_cfg_path, _read_merged_parser
         cfg_file = _default_cfg_path()
         if not cfg_file.exists():
             return
-        parser = ConfigParser()
         try:
-            parser.read(cfg_file, encoding="utf-8")
+            parser, _ = _read_merged_parser(cfg_file)
         except Exception:
             return
         if not parser.has_section("llm"):

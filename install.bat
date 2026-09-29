@@ -52,6 +52,18 @@ git clone --branch %BRANCH% --single-branch %REPO_URL% "%PROJECT_DIR%"
 if errorlevel 1 goto :error
 
 echo [NebulonMind] Repository cloned successfully.
+
+rem Machine-local config overlay (gitignored): per-machine edits belong in
+rem nebulonmd.local.cfg so the tracked nebulonmd.cfg stays pristine.
+if not exist "%PROJECT_DIR%\nebulonmd.local.cfg" (
+    (
+        echo # nebulonmd.local.cfg -- machine-local NebulonMind overrides ^(gitignored^).
+        echo # Same INI shape as nebulonmd.cfg; only keys present here take effect.
+        echo # Secrets still belong in .env; exported shell env beats both files.
+        echo # Examples: [llm] nmd_llm_provider/nmd_llm_model, [background] nmd_background_user
+    ) > "%PROJECT_DIR%\nebulonmd.local.cfg"
+    echo [NebulonMind] Created machine-local config template.
+)
 goto :movedir
 
 :update_repo

@@ -58,6 +58,7 @@ from .middleware import (
     MetricsRegistry,
     RateLimitMiddleware,
     RequestIdFilter,
+    ServerTimingMiddleware,
 )
 from .schemas import (
     AgentChatEnvelope,
@@ -428,9 +429,15 @@ def create_app(
                 "Content-Type",
                 "X-Request-ID",
             ],
+            expose_headers=[
+                "X-Request-ID",
+                "X-Server-Time",
+                "X-Duration-Ms",
+            ],
         )
     # Middleware order (first added = innermost): metrics → body limit →
-    # rate limit → auth → correlation ID (outermost).
+    # rate limit → auth → correlation ID → console assets → server timing
+    # (outermost, so X-Duration-Ms covers the full stack).
     app.add_middleware(MetricsMiddleware, registry=metrics)
     app.add_middleware(BodyLimitMiddleware, max_bytes=config.max_body_bytes, metrics=metrics)
     app.add_middleware(
@@ -441,6 +448,7 @@ def create_app(
     app.add_middleware(AuthMiddleware, token=config.auth_token)
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(ConsoleAssetCacheMiddleware)
+    app.add_middleware(ServerTimingMiddleware)
 
     _request_id_filter = RequestIdFilter()
     nmd_logger = logging.getLogger("nmd_host")

@@ -29,6 +29,8 @@ The project is organized into several logical layers:
 | Item | Description |
 |---|---|
 | `.env` | Environment variables for NebulonDB connection (`NEBULONDB_API_HOST`, `NEBULONDB_API_PORT`, `NEBULONDB_API_SCHEME`, `NEBULONDB_USERNAME`, `NEBULONDB_PASSWORD`) and project defaults (`NMD_*` variables). |
+| `nebulonmd.cfg` | Tracked defaults (ships in git, stays pristine). |
+| `nebulonmd.local.cfg` | Machine-local overrides, gitignored — same INI shape, only changed keys. Precedence: tracked cfg → local overlay → env/`.env`. Console/`PUT /config/cfg` writes land here; `GET /config/cfg` reports each key's `source`. |
 | `nebulonmind.py` | Entry point: no arguments launches the interactive chat TUI; `start` / `stop` / `restart` manage the API service as a background process (PID file + persistent logs). Startup prints the NEBULONMIND banner, clears stale `__pycache__`, and shows *"Getting the server ready for you..."*. |
 | `pyproject.toml` | Project metadata (name `nebulonmind`, version `0.1.0`), dependencies (`fastapi`, `uvicorn`, `pydantic`, `pytest`, etc.) and build configuration. |
 | `README.md` | High‑level overview, architecture, memory model, Phase 1‑3 design, agent integration, and usage examples. |

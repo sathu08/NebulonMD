@@ -41,6 +41,35 @@ from .trace import ExecutionTrace, LLMSpan, RecallSpan, ToolSpan
 logger = logging.getLogger("nmd_host.agent.engine")
 
 
+def _unwrap_answer(raw: str) -> str:
+    """Unwrap a final answer mistakenly wrapped as ``{"answer": "..."}``.
+
+    The tool-call protocol teaches models to reply in JSON, and some models
+    (especially reasoning ones) over-apply it to the final answer too. A
+    reply that is a JSON object with a string ``answer`` key and no ``tool``
+    key is the answer itself, not a tool call — return the inner text so the
+    console never shows raw ``{"answer": "..."}`` to the user.
+    """
+    text = (raw or "").strip()
+    stripped = text
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`").strip()
+        if stripped.startswith("json"):
+            stripped = stripped[4:].strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return raw
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        return raw
+    if not isinstance(data, dict) or "tool" in data:
+        return raw
+    answer = data.get("answer")
+    if isinstance(answer, str) and answer.strip():
+        return answer.strip()
+    return raw
+
+
 def _parse_tool_call(raw: str) -> Optional[AgentToolCall]:
     """Tolerantly extract a tool-call JSON object from an LLM reply."""
     text = (raw or "").strip()
@@ -123,6 +152,7 @@ class AgentRuntime:
             )
             llm_ms = (time.monotonic() - llm_started) * 1000.0
             text = reply.text if hasattr(reply, "text") else reply
+            text = _unwrap_answer(text)
             trace.llm = LLMSpan(
                 model=model_name,
                 latency_ms=trace.llm.latency_ms + llm_ms,

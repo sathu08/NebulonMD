@@ -102,6 +102,36 @@ else
 fi
 
 # ------------------------------------------------------------
+# Machine-local config overlay (gitignored)
+# ------------------------------------------------------------
+# The tracked nebulonmd.cfg ships defaults. Per-machine edits belong in
+# nebulonmd.local.cfg (same INI shape, only changed keys) so `git status`
+# stays clean. Create an annotated template on fresh installs only — never
+# overwrite an existing overlay.
+
+LOCAL_CFG="$PROJECT_DIR/nebulonmd.local.cfg"
+
+if [[ ! -f "$LOCAL_CFG" ]]; then
+    cat > "$LOCAL_CFG" <<'EOF'
+# nebulonmd.local.cfg — machine-local NebulonMind overrides (gitignored).
+# Same INI shape as nebulonmd.cfg; only keys present here take effect, and
+# they beat the tracked defaults. Secrets still belong in .env, and an
+# explicitly exported shell environment beats both files.
+#
+# Examples (uncomment + edit as needed):
+# [llm]
+# nmd_llm_provider = nvidia
+# nmd_llm_model = meta/muse-glimmer-30b
+# [agent]
+# nmd_agent_model = meta/muse-glimmer-30b
+# [background]
+# nmd_background_user = sathya
+EOF
+    log "Created machine-local config template:"
+    log "$LOCAL_CFG"
+fi
+
+# ------------------------------------------------------------
 # Set Current Directory to NebulonMind
 # ------------------------------------------------------------
 

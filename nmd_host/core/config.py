@@ -336,13 +336,18 @@ class NMDConfig:
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
 
+        # Tracked defaults overlaid with the machine-local file (gitignored);
+        # ``self._config`` is the merged effective view, ``self._local`` the
+        # local-only overlay. Writes always go to the local file so the
+        # tracked ``nebulonmd.cfg`` stays pristine in git.
         try:
-            self._config = ConfigParser()
-            self._config.read(self.config_path, encoding="utf-8")
+            self._config, self._local = _read_merged_parser(self.config_path)
         except Exception as e:
             raise RuntimeError(
                 f"Failed to load config file '{self.config_path}': {e}"
             ) from e
+        self.local_path = _local_cfg_path(self.config_path)
+        self._dirty: set = set()
 
         self._validate_sections()
         self._apply_env_override()
@@ -434,10 +439,40 @@ class NMDConfig:
             return fallback
         return value in ("1", "true", "yes", "on")
 
+    def _mark_dirty(self, section: str, key: str) -> None:
+        """Remember a locally-changed key for the next :meth:`_write`."""
+        key = str(key).strip().lower()
+        if key:
+            self._dirty.add((section, key))
+
     def _write(self):
-        """Persist current config state back to disk."""
-        with self.config_path.open("w", encoding="utf-8") as f:
-            self._config.write(f)
+        """Persist locally-changed settings to ``nebulonmd.local.cfg``.
+
+        Only keys changed through this instance (tracked in ``_dirty``) are
+        written, merged over any existing local file — the tracked
+        ``nebulonmd.cfg`` is never modified, so ``git status`` stays clean.
+        """
+        if not self._dirty:
+            return
+        parser = ConfigParser()
+        if self.local_path.exists():
+            try:
+                parser.read(self.local_path, encoding="utf-8")
+            except Exception:
+                parser = ConfigParser()
+        for section, key in sorted(self._dirty):
+            try:
+                value = self._config.get(section, key, fallback=None)
+            except Exception:
+                continue
+            if value is None:
+                continue
+            if not parser.has_section(section):
+                parser.add_section(section)
+            parser.set(section, key, value)
+        self.local_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.local_path.open("w", encoding="utf-8") as f:
+            parser.write(f)
 
     def _validate_sections(self):
         required_sections = ["paths", "backend", "server"]
@@ -457,12 +492,31 @@ class NMDConfig:
             for section in self._config.sections()
         }
 
+    def key_source(self, section: str, key: str) -> str:
+        """Where an effective value comes from: ``env``/``local``/``default``.
+
+        ``env`` wins (explicit ``.env`` / process environment), then the
+        machine-local overlay, then the tracked defaults — the same order the
+        loader applies.
+        """
+        if (os.environ.get(key.upper()) or "").strip() != "":
+            return "env"
+        try:
+            local_keys = dict(self._local.items(section))
+        except Exception:
+            local_keys = {}
+        if key.lower() in local_keys:
+            return "local"
+        return "default"
+
     def settings_view(self) -> list:
         """Return the grouped, typed settings for the dashboard/TUI.
 
         Mirrors the NebulonDB console config layout: each group carries a
         title/description and typed, labelled keys with native Python values.
-        Secret keys are excluded.
+        Secret keys are excluded. Every key also reports its ``source``
+        (``default``/``local``/``env``) so operators can see at a glance
+        which layer provides the effective value.
         """
         values = self.current_values()
         groups = []
@@ -481,6 +535,7 @@ class NMDConfig:
                         "type": meta.get("type", "str"),
                         "hint": meta.get("hint", ""),
                         "value": _coerce_typed(raw, meta.get("type", "str")),
+                        "source": self.key_source(section, key),
                     }
                 )
             groups.append(
@@ -494,15 +549,17 @@ class NMDConfig:
         return groups
 
     def update_config(self, updates: dict) -> list:
-        """Update cfg entries and persist the file.
+        """Update cfg entries and persist them to the machine-local file.
 
         ``updates`` has the shape ``{section: {key: value}}``. Only sections
         already present in the cfg are accepted (so required sections such as
         ``paths``/``backend``/``server`` can never be dropped), and secret
         keys (_SECRET_KEYS) are rejected — they belong in ``.env``, never in
-        the cfg. Values are coerced to strings. Returns the list of
-        ``section.key=value`` entries that were written. A restart is needed
-        for a running service to fully apply the new values.
+        the cfg. Values are coerced to strings. Changes are written to
+        ``nebulonmd.local.cfg`` (gitignored); the tracked ``nebulonmd.cfg``
+        is never modified. Returns the list of ``section.key=value`` entries
+        that were written. A restart is needed for a running service to fully
+        apply the new values.
         """
         if not isinstance(updates, dict) or not updates:
             raise ValueError("updates must be a non-empty {section: {key: value}} mapping")
@@ -527,6 +584,7 @@ class NMDConfig:
                         "not nebulonmd.cfg"
                     )
                 self._config.set(section, key, str(value).strip())
+                self._mark_dirty(section, key)
                 updated.append(f"{section}.{key}={value}")
         self._write()
         return updated
@@ -547,6 +605,7 @@ class NMDConfig:
         if not self._config.has_section("background"):
             self._config.add_section("background")
         self._config.set("background", "NMD_BACKGROUND_USER", username)
+        self._mark_dirty("background", "NMD_BACKGROUND_USER")
         self.NMD_BACKGROUND_USER = username
         self._write()
 
@@ -557,6 +616,7 @@ class NMDConfig:
         env_home = os.environ.get("NEBULONMD_HOME")
         if env_home and self._config.get("paths", "nmd_home") != env_home:
             self._config.set("paths", "nmd_home", env_home)
+            self._mark_dirty("paths", "nmd_home")
             updated = True
 
         if updated:
@@ -766,22 +826,44 @@ def _default_cfg_path() -> Path:
     return _nmd_home() / "nebulonmd.cfg"
 
 
-def _load_cfg(cfg_path: Optional[Path] = None, override: bool = False) -> bool:
-    """Load non-secret settings from ``nebulonmd.cfg`` into ``os.environ``.
+#: Machine-local overrides for ``nebulonmd.cfg``. Tracked in no repository:
+#: add it to ``.gitignore``. Same INI shape, only the keys this machine
+#: changed — the loader merges tracked defaults <- local <- env/``.env``.
+LOCAL_CFG_FILENAME = "nebulonmd.local.cfg"
 
-    Mirrors ``NebulonDB``'s ``nebulondb.cfg``: the INI file stores operational
-    settings (hosts, ports, weights, sizes), while secrets (username,
-    password, API keys) stay in ``.env`` / the process environment and are
-    never read from the cfg.
+
+def _local_cfg_path(cfg_path: Optional[Path] = None) -> Path:
+    """Sibling ``nebulonmd.local.cfg`` next to the tracked config file."""
+    base = Path(cfg_path) if cfg_path else _default_cfg_path()
+    return base.parent / LOCAL_CFG_FILENAME
+
+
+def _read_merged_parser(tracked_path: Path) -> tuple:
+    """Read tracked defaults overlaid with the machine-local file.
+
+    Returns ``(merged, local)`` ``ConfigParser`` objects. A missing local
+    file is normal (fresh clone = pure defaults); a corrupt one is ignored
+    so a bad local edit can never prevent startup (delete it to recover).
     """
-    cfg_file = cfg_path or _default_cfg_path()
-    if not cfg_file.exists():
-        return False
-    parser = ConfigParser()
-    try:
-        parser.read(cfg_file, encoding="utf-8")
-    except Exception:  # defensive: corrupt cfg must not break startup
-        return False
+    merged = ConfigParser()
+    merged.read(tracked_path, encoding="utf-8")
+    local = ConfigParser()
+    local_path = _local_cfg_path(tracked_path)
+    if local_path.exists():
+        try:
+            local.read(local_path, encoding="utf-8")
+        except Exception:
+            local = ConfigParser()
+    for section in local.sections():
+        if not merged.has_section(section):
+            merged.add_section(section)
+        for key, value in local.items(section):
+            merged.set(section, key, value)
+    return merged, local
+
+
+def _export_parser_to_env(parser: ConfigParser, override: bool) -> bool:
+    """Copy one parser's non-secret settings into ``os.environ``."""
     loaded = False
     for section in parser.sections():
         for key, value in parser.items(section):
@@ -793,6 +875,41 @@ def _load_cfg(cfg_path: Optional[Path] = None, override: bool = False) -> bool:
                 os.environ[key] = value
                 loaded = True
     return loaded
+
+
+def _load_cfg(cfg_path: Optional[Path] = None, override: bool = False) -> bool:
+    """Load non-secret settings into ``os.environ`` (layered).
+
+    Precedence: tracked ``nebulonmd.cfg`` defaults, then the machine-local
+    overlay ``nebulonmd.local.cfg`` (always wins over tracked), then the
+    existing process environment/``.env`` — unless ``override`` is true
+    (console live-apply), in which case file values win outright.
+
+    Mirrors ``NebulonDB``'s ``nebulondb.cfg``: the INI files store
+    operational settings (hosts, ports, weights, sizes), while secrets
+    (username, password, API keys) stay in ``.env`` / the process
+    environment and are never read from the cfg.
+    """
+    cfg_file = cfg_path or _default_cfg_path()
+    if not cfg_file.exists():
+        return False
+    try:
+        merged, local = _read_merged_parser(cfg_file)
+    except Exception:  # defensive: corrupt cfg must not break startup
+        return False
+    tracked_only = ConfigParser()
+    try:
+        tracked_only.read(cfg_file, encoding="utf-8")
+    except Exception:
+        return False
+    if override:
+        # Console live-apply: file values win outright, local beats tracked.
+        loaded = _export_parser_to_env(tracked_only, True)
+        return _export_parser_to_env(local, True) or loaded
+    # Startup gap-fill: shell env is never clobbered; local fills first so
+    # it beats tracked defaults on ties.
+    loaded = _export_parser_to_env(local, False)
+    return _export_parser_to_env(tracked_only, False) or loaded
 
 
 # Credentials baked into the sample ``.env`` for local development. These are

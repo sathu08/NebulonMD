@@ -11,6 +11,10 @@
   own buckets; for strict global limits put a gateway in front.
 * ``MetricsRegistry`` — dependency-free counters/latency, rendered in
   Prometheus text format by the ``/metrics`` endpoint.
+* ``ServerTimingMiddleware`` — stamp every HTTP response with the server's
+  current date/time (``X-Server-Time``, UTC ISO-8601) and how long the
+  request took to serve (``X-Duration-Ms``), so API clients and the web
+  console can show wall-clock time and run time without extra calls.
 
 Everything is dependency-free (stdlib only) so the service adds no
 third-party runtime packages.
@@ -404,6 +408,51 @@ class MetricsMiddleware:
             )
 
 
+class ServerTimingMiddleware:
+    """Stamp every HTTP response with server date/time + run duration.
+
+    Adds two response headers (ASCII-safe, dependency-free)::
+
+        X-Server-Time: 2026-09-29T14:30:05.123Z   (UTC, ISO-8601, ms precision)
+        X-Duration-Ms: 146562                     (wall time serving this request)
+
+    ``X-Duration-Ms`` covers the full inner stack (routing, LLM calls,
+    NebulonDB I/O) since this middleware sits outermost. Failures can never
+    break the response: header injection is best-effort inside the send
+    wrapper.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = time.monotonic()
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                try:
+                    duration_ms = int((time.monotonic() - started) * 1000)
+                    server_now = time.strftime(
+                        "%Y-%m-%dT%H:%M:%S", time.gmtime()
+                    ) + f".{int(time.time() * 1000) % 1000:03d}Z"
+                    response_headers = list(message.get("headers", []))
+                    response_headers.append(
+                        (b"x-server-time", server_now.encode("ascii"))
+                    )
+                    response_headers.append(
+                        (b"x-duration-ms", str(duration_ms).encode("ascii"))
+                    )
+                    message["headers"] = response_headers
+                except Exception:
+                    logger.debug("server timing stamp failed", exc_info=True)
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 __all__ = [
     "AuthMiddleware",
     "BodyLimitMiddleware",
@@ -412,4 +461,5 @@ __all__ = [
     "MetricsRegistry",
     "RateLimitMiddleware",
     "RequestIdFilter",
+    "ServerTimingMiddleware",
 ]

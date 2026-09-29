@@ -149,6 +149,17 @@ curl -H "Authorization: Bearer <paste-generated>" \
 | `[lifecycle]` | `nmd_temporary_ttl_seconds`, `nmd_lifecycle_auto_cleanup_cron` | 30 days, daily 03:00 | auto-forgetting sweep |
 | `[context]` | `nmd_context_max_items` / `nmd_context_max_characters` | `10` / `6000` | LLM context bounds |
 
+#### Machine-local overrides (`nebulonmd.local.cfg`, gitignored)
+
+`nebulonmd.cfg` ships defaults and stays pristine in git. Per-machine edits —
+via the console, `PUT /config/cfg`, or by hand — land in
+`nebulonmd.local.cfg` (same INI shape, only changed keys). Precedence:
+**tracked cfg → local overlay → env/`.env`**, and `GET /config/cfg` reports
+each key's `source` (`default`/`local`/`env`). Secrets still live in `.env`
+only. Note: after editing `.env`, do a full stop/start from a shell that
+sourced it (`set -a; source .env; set +a`) — `/config/restart` inherits the
+running process env and will not pick up `.env` changes.
+
 ---
 
 ## ▶️ Running

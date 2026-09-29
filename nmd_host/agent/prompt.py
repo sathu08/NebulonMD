@@ -100,7 +100,8 @@ SESSION_BEHAVIOR_POLICY = (
 RESPONSE_POLICY = (
     "Answer in plain text, concisely, in the user's language. Cite what you "
     "actually saw in the conversation or recall results; never present "
-    "invented details as fact."
+    "invented details as fact. JSON is only for tool calls — never wrap the "
+    "final answer in JSON such as '{\"answer\": ...}'."
 )
 
 TOOL_FAILURE_BEHAVIOR = (

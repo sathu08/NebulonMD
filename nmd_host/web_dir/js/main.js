@@ -321,6 +321,12 @@ const COMMANDS = [{
                 };
                 if (body !== undefined) meta.body = JSON.stringify(body);
                 const resp = await fetch(url, meta);
+                try {
+                    updateTiming(
+                        resp.headers.get('X-Server-Time'),
+                        resp.headers.get('X-Duration-Ms')
+                    );
+                } catch (_) { /* headers unavailable */ }
                 let json = null;
                 try { json = await resp.json(); } catch (_) { /* non-JSON response */ }
                 if (!resp.ok || (json && json.success === false)) {
@@ -370,6 +376,31 @@ const COMMANDS = [{
                 setupEventListeners();
                 terminalInput.focus();
                 updatePrompt();
+            }
+
+            function formatDuration(ms) {
+                const n = parseInt(ms, 10);
+                if (isNaN(n) || n < 0) return null;
+                if (n < 1000) return `${n}ms`;
+                const s = n / 1000;
+                if (s < 60) return `${s.toFixed(1)}s`;
+                const m = Math.floor(s / 60);
+                return `${m}m ${(s % 60).toFixed(0)}s`;
+            }
+
+            function formatServerTime(iso) {
+                // "2026-09-29T14:30:05.123Z" -> "2026-09-29 14:30:05 UTC"
+                const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(iso || '');
+                return m ? `${m[1]} ${m[2]} UTC` : (iso || null);
+            }
+
+            function updateTiming(serverTime, durationMs) {
+                const el = document.getElementById('timingInfo');
+                if (!el) return;
+                const t = formatServerTime(serverTime);
+                const d = formatDuration(durationMs);
+                if (!t && !d) return;
+                el.textContent = `🕒 ${t || '--'} · ⏱️ ${d ? `last call ${d}` : '--'}`;
             }
 
             function refreshApiBadge() {
