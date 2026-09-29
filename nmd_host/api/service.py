@@ -174,9 +174,10 @@ class DefaultServiceProvider(ServiceProvider):
     def bootstrap(self) -> None:
         """Ensure the identity corpus/segment AND the storage corpora exist.
 
-        Storage corpora (``mind_truth`` + ``mind_chats`` COSMOS,
+        Storage corpora (``mind_truth`` + ``mind_chats`` + ``mind_traces`` +
+        ``mind_sessions`` + ``mind_background`` + ``mind_feedback`` COSMOS,
         ``mind_semantic`` ORBIT) are provisioned here so the first memory
-        write/recall never hits a missing-corpus failure; segments inside
+        write/recall/monitor-capture never hits a missing-corpus failure; segments inside
         them materialise lazily on the backend. Any failure propagates to
         the caller (the server lifespan logs it and readiness reports
         not-ready).

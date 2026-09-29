@@ -103,7 +103,16 @@ class NebulonDBSessionStore:
 
     def save(self, session: AgentSession) -> None:
         segment = self._segment(session.user_id)
-        self.delete(session.user_id, session.session_id)
+        try:
+            ensure = getattr(self._api, "ensure_corpus", None)
+            if callable(ensure):
+                ensure(self.CORPUS, "cosmos")
+        except Exception:
+            pass
+        try:
+            self.delete(session.user_id, session.session_id)
+        except Exception:
+            pass
         self._api.load_segment(
             self.CORPUS,
             segment,

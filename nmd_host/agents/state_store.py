@@ -85,11 +85,23 @@ class NebulonDBJobStateStore:
         return states
 
     def save(self, job_id: str, state: Dict[str, Any]) -> None:
-        record = self._find_record(job_id)
+        try:
+            ensure = getattr(self._api, "ensure_corpus", None)
+            if callable(ensure):
+                ensure(self.CORPUS, "cosmos")
+        except Exception:
+            pass
+        try:
+            record = self._find_record(job_id)
+        except Exception:
+            record = None
         if record is not None:
-            self._api.delete_record(
-                self.CORPUS, self.SEGMENT, "cosmos", record["_id"]
-            )
+            try:
+                self._api.delete_record(
+                    self.CORPUS, self.SEGMENT, "cosmos", record["_id"]
+                )
+            except Exception:
+                pass
         payload = {"job_id": job_id}
         payload.update(state)
         self._api.load_segment(

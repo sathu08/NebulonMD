@@ -99,6 +99,7 @@ class NebulonDBMonitorStore:
     """NebulonDB-backed store (production path)."""
 
     CORPUS = "mind_traces"
+    FEEDBACK_CORPUS = "mind_feedback"
     DOC_TYPE = "monitor_trace"
 
     def __init__(self, client: Any, user_id: str, username: str = "") -> None:
@@ -134,6 +135,16 @@ class NebulonDBMonitorStore:
         return items
 
     def save(self, trace: MonitorTrace) -> MonitorTrace:
+        # Defensive auto-create: startup bootstrap provisions mind_traces,
+        # but older servers / raced first-writes still hit "Corpus
+        # 'mind_traces' not found". Best-effort ensure keeps the turn alive;
+        # server.py already treats capture as fail-open (warning only).
+        try:
+            ensure = getattr(self._api, "ensure_corpus", None)
+            if callable(ensure):
+                ensure(self.CORPUS, "cosmos")
+        except Exception:
+            pass
         self._api.load_segment(
             self.CORPUS,
             self._segment,
@@ -183,14 +194,28 @@ class NebulonDBMonitorStore:
         return mem.stats(since_ms=since_ms)
 
     def save_feedback(self, feedback: MonitorFeedback) -> bool:
-        """Save a feedback entry to NebulonDB."""
+        """Save a feedback entry (same load_segment/get_data API as traces).
+
+        Was broken: used self.client.upsert/query which don't exist on
+        NebulonDBClient (always AttributeError → silent False). Now one JSON
+        doc per feedback in mind_feedback cosmos, segment user_<id>.
+        """
         try:
-            doc = feedback.model_dump()
-            doc["_id"] = f"{feedback.user_id}_{feedback.trace_id}_{int(time.time() * 1000)}"
-            self.client.upsert(
-                corpus="mind_feedback",
-                segment=f"user_{feedback.user_id}",
-                document=doc,
+            ensure = getattr(self._api, "ensure_corpus", None)
+            if callable(ensure):
+                ensure(self.FEEDBACK_CORPUS, "cosmos")
+        except Exception:
+            pass
+        try:
+            self._api.load_segment(
+                self.FEEDBACK_CORPUS,
+                f"user_{self._user_id}",
+                "cosmos",
+                records=[{"text": feedback.model_dump_json()}],
+                set_columns=["text"],
+                lang_type="en",
+                doc_type="monitor_feedback",
+                metadata={"app": "nmd_monitor"},
             )
             return True
         except Exception:
@@ -199,24 +224,26 @@ class NebulonDBMonitorStore:
     def get_feedback(self, trace_id: str = "", limit: int = 50, offset: int = 0) -> List[MonitorFeedback]:
         """Get feedback entries, optionally filtered by trace_id."""
         try:
-            results = self.client.query(
-                corpus="mind_feedback",
-                segment=f"user_{self._user_id}",
-                metadata={},
-                limit=limit + offset,
-            )
-            items = []
-            for res in results:
-                try:
-                    feedback = MonitorFeedback(**res.document)
-                    if not trace_id or feedback.trace_id == trace_id:
-                        items.append(feedback)
-                except Exception:
-                    continue
-            items.sort(key=lambda f: f.created_at_ms, reverse=True)
-            return items[offset: offset + max(0, limit)]
+            records = self._api.get_data(
+                self.FEEDBACK_CORPUS, f"user_{self._user_id}", "cosmos")
         except Exception:
             return []
+        items: List[MonitorFeedback] = []
+        for record in records or []:
+            try:
+                payload = json.loads(record.get("text", ""))
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            try:
+                fb = MonitorFeedback.model_validate(payload)
+            except Exception:
+                continue
+            if not trace_id or fb.trace_id == trace_id:
+                items.append(fb)
+        items.sort(key=lambda f: f.created_at_ms, reverse=True)
+        return items[offset: offset + max(0, limit)]
 
 
 def monitor_store_for(provider: Any, username: str):

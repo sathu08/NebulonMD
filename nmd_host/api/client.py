@@ -232,7 +232,9 @@ class NebulonDBClient:
         fails with ``Corpus 'mind_truth'/'mind_semantic'/'mind_chats' not
         found in metadata``. NebulonDB materialises the segments inside
         each corpus lazily on first use, so only the corpus itself needs
-        provisioning here.
+        provisioning here. Monitor/sessions/background corpora are included
+        too — otherwise `nmd_monitor capture failed ... mind_traces not
+        found` warns on every chat while the turn itself still succeeds.
         """
         from ..stores.truth_store import TruthStore
         from ..stores.vector_store import VectorStore
@@ -241,6 +243,14 @@ class NebulonDBClient:
         self.ensure_corpus(TruthStore.CORPUS, "cosmos")
         self.ensure_corpus(VectorStore.CORPUS, "orbit")
         self.ensure_corpus(ChatHistoryStore.CORPUS, "cosmos")
+        # P0 monitor + session/background/feedback corpora (all COSMOS).
+        # Import-light: plain names, no store imports needed (avoids cycles).
+        for _corpus in ("mind_traces", "mind_sessions", "mind_background",
+                        "mind_feedback"):
+            try:
+                self.ensure_corpus(_corpus, "cosmos")
+            except Exception:
+                pass
 
     def list_segment(
         self, corpus: str, ndb_type: str
