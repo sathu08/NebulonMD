@@ -24,10 +24,6 @@ logs/
 # Environment & secrets
 # ===============================
 .env
-# Machine-local NebulonMind overrides (same INI shape as nebulonmd.cfg,
-# only the keys this machine changed). The tracked nebulonmd.cfg ships
-# defaults; per-machine edits belong here so `git status` stays clean.
-nebulonmd.local.cfg
 
 # ===============================
 # Virtual environment & build
