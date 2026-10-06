@@ -234,6 +234,23 @@ def _decide_with_fallback(bundle, conversation, extractor):
     return decisions, intelligence
 
 
+def _extractor_usage(extractor) -> "Usage":
+    """Token usage from the last LLM extraction (zeros when rules-only)."""
+    from .schemas import Usage
+
+    try:
+        provider = getattr(extractor, "provider", None)
+        last = getattr(provider, "last_usage", None)
+        u = last() if callable(last) else None
+        if isinstance(u, dict) and (u.get("tokens_in") or u.get("tokens_out")):
+            tin, tout = int(u.get("tokens_in", 0)), int(u.get("tokens_out", 0))
+            return Usage(tokens_in=tin, tokens_out=tout, tokens_total=tin + tout,
+                         estimated=bool(u.get("estimated", True)))
+    except Exception:
+        pass
+    return Usage(tokens_in=0, tokens_out=0, tokens_total=0, estimated=True)
+
+
 class ConsoleAssetCacheMiddleware:
     """Do not let browsers cache console assets: every refresh revalidates,
     so a fixed ``main.js`` is picked up without a manual cache purge."""
@@ -968,8 +985,9 @@ def create_app(
     ) -> DecideEnvelope:
         bundle = _bundle(user_id)
         conversation = request.to_conversation()
+        extractor = _build_extractor(config)
         accepted, intelligence = _decide_with_fallback(
-            bundle, conversation, _build_extractor(config)
+            bundle, conversation, extractor
         )
         rejected: Optional[List] = None
         if request.include_rejected:
@@ -978,7 +996,8 @@ def create_app(
             ]
         return DecideEnvelope(
             message=f"{len(accepted)} decision(s)",
-            data=DecideData(decisions=accepted, rejected=rejected),
+            data=DecideData(decisions=accepted, rejected=rejected,
+                            usage=_extractor_usage(extractor)),
         )
 
     @app.post(
@@ -999,8 +1018,9 @@ def create_app(
     ) -> ProcessEnvelope:
         bundle = _bundle(user_id)
         conversation = request.to_conversation()
+        extractor = _build_extractor(config)
         decisions, _ = _decide_with_fallback(
-            bundle, conversation, _build_extractor(config)
+            bundle, conversation, extractor
         )
         ingestions: List[IngestReport] = []
         if request.persist:
@@ -1033,7 +1053,8 @@ def create_app(
                 f"{sum(1 for r in ingestions if r.action in ('STORE', 'SUPERSEDE'))} "
                 "memory(ies) stored"
             ),
-            data=ProcessData(decisions=decisions, ingestions=ingestions),
+            data=ProcessData(decisions=decisions, ingestions=ingestions,
+                             usage=_extractor_usage(extractor)),
         )
 
     # ------------------------------------------------------------------ #
@@ -1154,6 +1175,17 @@ def create_app(
                 status_code=502,
                 detail="agent LLM call failed (timeout / unavailable / rate-limited)",
             ) from exc
+        try:
+            from ..agent.schemas import Usage as AgentUsage
+            tr = getattr(data, "trace", None)
+            span = getattr(tr, "llm", None) if tr is not None else None
+            tin = int(getattr(span, "tokens_in", 0) or 0)
+            tout = int(getattr(span, "tokens_out", 0) or 0)
+            data.usage = AgentUsage(tokens_in=tin, tokens_out=tout,
+                                    tokens_total=tin + tout,
+                                    estimated=bool(getattr(span, "estimated", True)))
+        except Exception:
+            pass
         if session is not None and data.transcript:
             app.state.sessions.append_messages(
                 resolved_user, session.session_id, data.transcript

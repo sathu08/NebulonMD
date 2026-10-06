@@ -24,15 +24,87 @@ retries (``NMD_LLM_MAX_RETRIES``).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
 
 from pydantic import BaseModel
-from typing import Optional, Protocol, Type
+from typing import Any, Dict, Optional, Protocol, Type
 
 from nmd_host.utils.env_helpers import env_float as _env_float
 from nmd_host.utils.env_helpers import env_int as _env_int
+
+usage_logger = logging.getLogger("nmd_host.llm.usage")
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate when the provider exposes no native usage.
+
+    ~4 chars per token (OpenAI rule of thumb). No new deps.
+    """
+    t = str(text or "")
+    if not t.strip():
+        return 0
+    return max(1, len(t) // 4)
+
+
+def _usage_common(response: Any, prompt: str, text: str, system: Optional[str] = None) -> Dict[str, Any]:
+    """Native token usage from ANY provider SDK, else chars//4 estimate.
+
+    Shapes tried in order (first int pair wins):
+      OpenAI-style:   response.usage.prompt_tokens / completion_tokens
+                      (covers openai/ollama/nvidia/qwen/openrouter/other)
+      Anthropic-style: response.usage.input_tokens / output_tokens
+      Gemini-style:   response.usage_metadata.prompt_token_count /
+                      candidates_token_count
+      Dict-style:     usage as plain dict with any of the above keys.
+    """
+    try:
+        u = response.get("usage", None) if isinstance(response, dict) else getattr(response, "usage", None)
+        if isinstance(u, dict):
+            pairs = [("prompt_tokens", "completion_tokens"), ("input_tokens", "output_tokens"),
+                     ("prompt_token_count", "candidates_token_count")]
+            for a, b in pairs:
+                if isinstance(u.get(a), int) and isinstance(u.get(b), int):
+                    return {"tokens_in": u[a], "tokens_out": u[b], "estimated": False}
+        elif u is not None:
+            pairs = [("prompt_tokens", "completion_tokens"), ("input_tokens", "output_tokens"),
+                     ("prompt_token_count", "candidates_token_count")]
+            for a, b in pairs:
+                pin, pout = getattr(u, a, None), getattr(u, b, None)
+                if isinstance(pin, int) and isinstance(pout, int):
+                    return {"tokens_in": pin, "tokens_out": pout, "estimated": False}
+        meta = response.get("usage_metadata", None) if isinstance(response, dict) else getattr(response, "usage_metadata", None)
+        if meta is not None:
+            if isinstance(meta, dict):
+                pin, pout = meta.get("prompt_token_count"), meta.get("candidates_token_count")
+            else:
+                pin, pout = getattr(meta, "prompt_token_count", None), getattr(meta, "candidates_token_count", None)
+            if isinstance(pin, int) and isinstance(pout, int):
+                return {"tokens_in": pin, "tokens_out": pout, "estimated": False}
+    except Exception:
+        pass
+    full_in = (str(system or "") + "\n" + str(prompt or "")).strip()
+    return {"tokens_in": estimate_tokens(full_in), "tokens_out": estimate_tokens(text), "estimated": True}
+
+
+def _respond(provider: str, model: str, text: str, response: Any,
+             prompt: str, system: Optional[str] = None) -> "LLMResponse":
+    """One common build: native-or-estimate usage + log + LLMResponse."""
+    usage = _usage_common(response, prompt, text, system)
+    _log_usage(provider, model, "complete",
+               usage["tokens_in"], usage["tokens_out"], usage["estimated"])
+    return LLMResponse(text=text, provider=provider,
+                       tokens_in=usage["tokens_in"], tokens_out=usage["tokens_out"],
+                       estimated=usage["estimated"])
+
+
+def _log_usage(provider: str, model: str, route: str, tokens_in: int, tokens_out: int, estimated: bool) -> None:
+    # Lands in LOG_DIR/nebulonmind-*.log via the host stdout redirect.
+    usage_logger.info("llm_usage provider=%s model=%s route=%s tokens_in=%d tokens_out=%d tokens_total=%d estimated=%s",
+                      provider, model, route, tokens_in, tokens_out,
+                      tokens_in + tokens_out, str(estimated).lower())
 
 
 _CONFIG_ERROR = (
@@ -134,10 +206,19 @@ class LLMResponse(BaseModel):
 
     Adapters never leak SDK-specific shapes; they map everything into this
     model, so the extraction layer and Step 6 agent only ever see ``.text``.
+    ``tokens_in/out`` come from native ``usage`` when the SDK exposes it,
+    else ``estimate_tokens()`` (``estimated=True``).
     """
 
     text: str = ""
     provider: str = ""
+    tokens_in: int = 0
+    tokens_out: int = 0
+    estimated: bool = True
+
+    @property
+    def tokens_total(self) -> int:
+        return int(self.tokens_in or 0) + int(self.tokens_out or 0)
 
 
 def _classify_sdk_error(exc: Exception) -> LLMProviderError:
@@ -286,6 +367,12 @@ def _parse_json(raw: str, schema: Type[BaseModel]) -> BaseModel:
 class BaseLLMProvider:
     """Shared ``structured()`` for adapters that only implement ``complete``."""
 
+    _last_usage: Optional[Dict[str, Any]] = None
+
+    def last_usage(self) -> Optional[Dict[str, Any]]:
+        u = getattr(self, "_last_usage", None)
+        return dict(u) if isinstance(u, dict) else None
+
     def structured(self, prompt: str, schema: Type[BaseModel]) -> dict:
         # Check if lenient mode is enabled
         import os
@@ -296,6 +383,13 @@ class BaseLLMProvider:
             "matching the requested schema. No markdown, no prose."
         )
         raw = self.complete(prompt, system=system, temperature=0.0)
+        try:
+            if isinstance(raw, LLMResponse):
+                self._last_usage = {"tokens_in": int(raw.tokens_in or 0),
+                                    "tokens_out": int(raw.tokens_out or 0),
+                                    "estimated": bool(raw.estimated)}
+        except Exception:
+            pass
         text = raw.text if isinstance(raw, LLMResponse) else raw
         
         # Use robust JSON extraction with fallback
@@ -479,6 +573,14 @@ class RetryingLLMProvider:
     def structured(self, prompt: str, schema: Type[BaseModel]) -> dict:
         return self._provider.structured(prompt, schema)
 
+    def last_usage(self) -> Optional[Dict[str, Any]]:
+        inner = getattr(self._provider, "last_usage", None)
+        try:
+            u = inner() if callable(inner) else None
+            return dict(u) if isinstance(u, dict) else None
+        except Exception:
+            return None
+
 
 class OpenAIProvider(BaseLLMProvider):
     """OpenAI / any OpenAI-compatible endpoint."""
@@ -510,10 +612,8 @@ class OpenAIProvider(BaseLLMProvider):
             )
         except Exception as exc:
             raise _classify_sdk_error(exc) from exc
-        return LLMResponse(
-            text=response.choices[0].message.content or "",
-            provider=self.provider,
-        )
+        text = response.choices[0].message.content or ""
+        return _respond(self.provider, getattr(self, "model", ""), text, response, prompt, system)
 
 
 class OllamaProvider(OpenAIProvider):
@@ -649,10 +749,8 @@ class AnthropicProvider(BaseLLMProvider):
             )
         except Exception as exc:
             raise _classify_sdk_error(exc) from exc
-        return LLMResponse(
-            text="".join(block.text for block in response.content if block.type == "text"),
-            provider=self.provider,
-        )
+        text = "".join(block.text for block in response.content if block.type == "text")
+        return _respond(self.provider, getattr(self, "model", ""), text, response, prompt, system)
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -682,7 +780,8 @@ class GeminiProvider(BaseLLMProvider):
             )
         except Exception as exc:
             raise _classify_sdk_error(exc) from exc
-        return LLMResponse(text=response.text or "", provider=self.provider)
+        text = response.text or ""
+        return _respond(self.provider, getattr(self, "model", ""), text, response, prompt, system)
 
 
 _PROVIDERS = {

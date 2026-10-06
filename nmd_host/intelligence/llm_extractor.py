@@ -76,7 +76,16 @@ class LLMExtractor:
             turns=_render_turns(conversation),
         )
         raw = self.provider.structured(prompt, MemoryDecisionList)
-        items = raw.get("decisions", []) if isinstance(raw, dict) else []
+        # structured() may return a dict OR a validated model instance
+        # (_extract_with_fallback returns schema.model_validate(data)).
+        if isinstance(raw, dict):
+            items = raw.get("decisions", [])
+        elif isinstance(raw, list):
+            items = raw
+        elif hasattr(raw, "decisions"):
+            items = getattr(raw, "decisions") or []
+        else:
+            items = []
         decisions: List[MemoryDecision] = []
         for item in items:
             sanitized = sanitize_decision(item)
