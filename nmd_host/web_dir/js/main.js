@@ -90,6 +90,12 @@ const COMMANDS = [{
                 desc: 'Submit feedback for a trace: /feedback <trace_id> <score> [tag] [comment]',
                 shortcut: 'f',
                 action: (args) => submitFeedback(args)
+            }, {
+                name: '/feedback-list',
+                icon: '📝',
+                desc: 'Show submitted feedback: /feedback-list [trace_id] [limit]',
+                shortcut: 'd',
+                action: (args) => listFeedback(args)
             }, ];
 
 // ============ STATE ============
@@ -929,6 +935,9 @@ const COMMANDS = [{
                             `Tool acc:       ${((m.tool_selection_accuracy || 0) * 100).toFixed(0)}%\n` +
                             `Answer acc:     ${((m.answer_correctness || 0) * 100).toFixed(0)}%\n` +
                             `Hallucination:  ${((m.hallucination_rate || 0) * 100).toFixed(1)}%\n` +
+                            `Grounding:      ${((m.grounding_accuracy || 0) * 100).toFixed(0)}%\n` +
+                            `Unsupported:    ${((m.unsupported_rate || 0) * 100).toFixed(1)}%\n` +
+                            `Router forced:  ${((m.router_forced_rate || 0) * 100).toFixed(0)}%\n` +
                             `Avg latency:    ${(m.avg_latency_ms || 0).toFixed(0)} ms`,
                             'ai');
                         addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
@@ -1039,6 +1048,44 @@ const COMMANDS = [{
                         addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
                     })
                     .catch(err => addMessage('error', `Feedback submit failed: ${err.message}`, 'error'))
+                    .finally(() => scrollToBottom()));
+            }
+
+            function listFeedback(args) {
+                const parts = args ? args.trim().split(/\s+/).filter(Boolean) : [];
+                let traceId = '';
+                let limit = 20;
+                // /feedback-list [trace_id] [limit] — a leading number is the limit.
+                if (parts.length === 1) {
+                    if (/^\d+$/.test(parts[0])) limit = Math.min(Math.max(parseInt(parts[0], 10), 1), 200);
+                    else traceId = parts[0];
+                } else if (parts.length >= 2) {
+                    traceId = parts[0];
+                    const n = parseInt(parts[1], 10);
+                    if (Number.isFinite(n)) limit = Math.min(Math.max(n, 1), 200);
+                }
+                const params = { user_id: currentUser, limit: limit };
+                if (traceId) params.trace_id = traceId;
+                // NOTE: handleCommand() already echoed input — do not echo again.
+                simulateTyping(() => apiGet('/monitor/feedback', params)
+                    .then(body => {
+                        const d = body.data || {};
+                        const items = d.feedback || [];
+                        if (!items.length) {
+                            addMessage('system', 'No feedback entries yet. Submit one with /feedback <trace_id> <score> [tag] [comment].', 'system');
+                            return;
+                        }
+                        addMessage('system', `━━━ Feedback (${items.length}) ━━━`, 'system');
+                        addMessage('ai',
+                            items.map(f =>
+                                `Trace: ${(f.trace_id || 'unknown').slice(0, 12)}…\n` +
+                                `Score: ${f.score}/5   Tag: ${f.tag || 'none'}\n` +
+                                `Comment: ${f.comment || 'none'}`
+                            ).join('\n───\n'),
+                            'ai');
+                        addMessage('system', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'system');
+                    })
+                    .catch(err => addMessage('error', `Feedback list failed: ${err.message}`, 'error'))
                     .finally(() => scrollToBottom()));
             }
 

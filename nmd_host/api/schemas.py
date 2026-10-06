@@ -313,11 +313,21 @@ class IntelligenceProcessRequest(IntelligenceInput):
     )
 
 
+class Usage(BaseModel):
+    """LLM token usage for one API call (native when exposed, else chars//4)."""
+
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_total: int = 0
+    estimated: bool = True
+
+
 class DecideData(BaseModel):
     """Step 2 verdicts (accepted always, rejected optional)."""
 
     decisions: List[MemoryDecision]
     rejected: Optional[List[MemoryDecision]] = None
+    usage: Optional[Usage] = None
 
 
 class IngestReport(BaseModel):
@@ -335,6 +345,7 @@ class ProcessData(BaseModel):
 
     decisions: List[MemoryDecision]
     ingestions: List[IngestReport]
+    usage: Optional[Usage] = None
 
 
 # ---------------------------------------------------------------------- #
@@ -428,6 +439,9 @@ class EvaluationMetrics(BaseModel):
     retrieval_accuracy: float = 0.0
     answer_correctness: float = 0.0
     hallucination_rate: float = 0.0
+    grounding_accuracy: float = 0.0
+    unsupported_rate: float = 0.0
+    router_forced_rate: float = 0.0
     avg_latency_ms: float = 0.0
     max_latency_ms: float = 0.0
     avg_tokens: float = 0.0
@@ -448,6 +462,10 @@ class EvaluationItemData(BaseModel):
     answer: str = ""
     answer_ok: Optional[bool] = None
     declines_answer: bool = False
+    router_says: str = ""
+    router_forced: bool = False
+    grounding_verdict: str = "UNKNOWN"
+    grounded: bool = False
     latency_ms: float = 0.0
     tokens: int = 0
     error: Optional[str] = None

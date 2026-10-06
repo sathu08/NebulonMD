@@ -21,6 +21,9 @@ class LLMSpan(BaseModel):
     model: str = ""
     latency_ms: float = 0.0
     tokens: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    estimated: bool = True
 
 
 class ToolSpan(BaseModel):
@@ -44,9 +47,10 @@ class ExecutionTrace(BaseModel):
     """Everything the runtime observed for one chat run.
 
     ``llm.latency_ms`` is the cumulative LLM wall-clock across turns;
-    ``tokens`` is an approximate token estimate (word counts of the
-    prompt + reply — providers that expose usage could refine it later).
-    ``recall`` is set whenever the run invoked the ``recall`` tool.
+    ``tokens`` is the total (kept for compat) = tokens_in + tokens_out.
+    Native provider usage is preferred; estimate (chars//4) only when
+    the SDK exposes nothing. ``recall`` is set whenever the run invoked
+    the ``recall`` tool.
     """
 
     trace_id: str = Field(default_factory=lambda: uuid.uuid4().hex)

@@ -9,6 +9,7 @@ lifecycle manager, so NebulonDB remains the only persistent store.
 from .config import AgentConfig, DEFAULT_SYSTEM_PROMPT
 from .engine import AgentRuntime
 from .prompt import build_system_prompt
+from .router import route_question, should_force_recall
 from .session import AgentSession, AgentSessionManager
 from .schemas import (
     AgentChatData,
@@ -46,4 +47,6 @@ __all__ = [
     "ToolSpan",
     "build_memory_toolkit",
     "build_system_prompt",
+    "route_question",
+    "should_force_recall",
 ]

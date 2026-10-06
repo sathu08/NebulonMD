@@ -27,9 +27,22 @@ class AgentConfig:
     session_ttl_seconds: int = 3600
     durable_sessions: bool = False
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    # Step 6.14 — deterministic intent router (eval suggestion #1): run
+    # ``recall`` before the first LLM turn for memory questions so tool
+    # selection no longer depends on model variance.
+    router_enabled: bool = True
+    # Suggestion #4 — short-answer path: memory answers in 1-2 sentences
+    # from recalled context instead of open-ended reasoning.
+    concise_memory_answers: bool = True
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
+        def _env_bool(name: str, default: bool) -> bool:
+            raw = os.environ.get(name, "").strip().lower()
+            if not raw:
+                return default
+            return raw in ("1", "true", "yes", "on")
+
         return cls(
             model=os.environ.get("NMD_AGENT_MODEL", "").strip(),
             max_turns=_env_int("NMD_AGENT_MAX_TURNS", 4),
@@ -44,6 +57,8 @@ class AgentConfig:
             system_prompt=os.environ.get(
                 "NMD_AGENT_SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT
             ),
+            router_enabled=_env_bool("NMD_AGENT_ROUTER", True),
+            concise_memory_answers=_env_bool("NMD_AGENT_CONCISE_ANSWERS", True),
         )
 
 

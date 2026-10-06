@@ -60,11 +60,23 @@ def test_retrieval_accuracy_counts_only_known_recall_items():
 
 def test_hallucination_rate_counts_unsupported_claims():
     results = [
-        {"type": "unknown", "declines_answer": False},
-        {"type": "unknown", "declines_answer": True},
+        {"type": "unknown", "declines_answer": False,
+         "answer": "Your favorite is Python."},
+        {"type": "unknown", "declines_answer": True,
+         "answer": "I do not have that stored."},
     ]
     assert hallucination_rate(results) == 0.5
 
+
+def test_hallucination_rate_ignores_errors_and_blanks():
+    results = [
+        {"type": "unknown", "declines_answer": True,
+         "answer": "I do not have that stored."},
+        {"type": "unknown", "declines_answer": False,
+         "answer": "", "error": "agent: 429"},
+        {"type": "unknown", "declines_answer": False, "answer": "   "},
+    ]
+    assert hallucination_rate(results) == 0.0
 
 def test_summarize_shape():
     results = [
@@ -115,7 +127,7 @@ class _ScriptedLLM:
         # Second pass: the recursive prompt already embeds a tool result.
         if "tool: " in lowered:
             if "nmd_user_01" in lowered or "my name" in lowered:
-                return LLMResponse(text="Your name is nmd_user_01.")
+                return LLMResponse(text="Your name is Sathya.")
             return LLMResponse(text="I do not have a memory confirming that.")
         if "what is my name" in lowered:
             return LLMResponse(
@@ -249,3 +261,130 @@ def test_console_evaluation_assets_served(app_with_llm):
             assert resp.status_code == 200, asset
         js = client.get("/api/NebulonMind/dashboard/js/main.js").text
         assert "/evaluation/run" in js
+
+
+# ---------------------------------------------------------------------- #
+# Step 13.1 — router / grounding / separated axes                        #
+# ---------------------------------------------------------------------- #
+
+
+def test_router_classifies_memory_questions():
+    from nmd_host.agent.router import route_question, should_force_recall
+
+    assert route_question("What is my name?") == "recall"
+    assert route_question("What project am I building?") == "recall"
+    assert route_question("What database does NebulonMind use?") == "recall"
+    assert route_question("Do I know Rust?") == "recall"
+    assert route_question("What is my favorite programming language?") == "recall"
+    assert route_question("Hello!") == "none"
+    assert route_question("What is Python?") == "none"
+    assert route_question("") == "none"
+    assert should_force_recall("What is my name?") is True
+    assert should_force_recall("Hello!") is False
+
+
+def test_grounding_verdict_labels():
+    from nmd_host.evaluation.grounding import (
+        CONTRADICTED,
+        SUPPORTED,
+        UNKNOWN,
+        UNSUPPORTED_INFERENCE,
+        grounding_verdict,
+    )
+
+    mems = ["I write my projects in Python."]
+    # Favorite claim from "writes in Python" → unsupported inference.
+    assert grounding_verdict(
+        "Your favorite programming language is Python.", mems, "", "unknown"
+    ) == UNSUPPORTED_INFERENCE
+    # Correct abstention on unknown → supported.
+    assert grounding_verdict(
+        "I don't have information saying it's your favorite language.",
+        mems, "", "unknown",
+    ) == SUPPORTED
+    # Supported recall answer.
+    assert grounding_verdict(
+        "You use Python.", ["I write my projects in Python."],
+        "Python", "known",
+    ) == SUPPORTED
+    # Denies a stored fact → contradicted.
+    assert grounding_verdict(
+        "The user has not previously specified which language they use.",
+        ["I write my projects in Python."], "Python", "known",
+    ) == CONTRADICTED
+    # Nemotron phrasing: correct abstention with "do not contain".
+    assert grounding_verdict(
+        "The stored memories do not contain any information about whether "
+        "you know Rust. None of the recalled facts mention Rust.",
+        [], "", "unknown",
+    ) == SUPPORTED
+    # Empty answer → unknown, never a hallucination claim.
+    assert grounding_verdict("", mems, "Python", "known") == UNKNOWN
+    # Greeting / general knowledge (known, no expected anchor, nothing
+    # retrieved) needs no memory support → supported, not unsupported.
+    assert grounding_verdict(
+        "Hello! How can I assist you today?", [], "", "known"
+    ) == SUPPORTED
+    assert grounding_verdict(
+        "Python is a high-level programming language.", [], "", "known"
+    ) == SUPPORTED
+
+
+def test_separated_axes_metrics():
+    from nmd_host.evaluation.metrics import (
+        grounding_accuracy,
+        router_forced_rate,
+        summarize,
+        unsupported_rate,
+    )
+
+    results = [
+        {"grounding_verdict": "SUPPORTED", "router_says": "recall",
+         "router_forced": True},
+        {"grounding_verdict": "UNSUPPORTED_INFERENCE", "router_says": "recall",
+         "router_forced": False},
+        {"grounding_verdict": "SUPPORTED", "router_says": "none",
+         "router_forced": False, "error": "agent: 429"},
+    ]
+    assert grounding_accuracy(results) == pytest.approx(0.5, abs=1e-3)
+    assert unsupported_rate(results) == pytest.approx(0.5, abs=1e-3)
+    assert router_forced_rate(results) == pytest.approx(0.5, abs=1e-3)
+    report = summarize(results)
+    assert report["grounding_accuracy"] == pytest.approx(0.5, abs=1e-3)
+    assert report["unsupported_rate"] == pytest.approx(0.5, abs=1e-3)
+    assert report["router_forced_rate"] == pytest.approx(0.5, abs=1e-3)
+    # Legacy keys still present for the dashboard.
+    assert "hallucination_rate" in report
+    assert "tool_selection_accuracy" in report
+
+
+def test_runner_records_router_and_grounding():
+    provider = InMemoryServiceProvider()
+    provider.create_user("user_001")
+    bundle = provider.bundle("user_001")
+    runner = EvaluationRunner(
+        _ScriptedLLM(), bundle.repository, bundle.manager,
+        user_id="user_001", top_k=5,
+    )
+    items = [
+        {
+            "id": "n1", "type": "known", "question": "What is my name?",
+            "seed": "My name is Sathya.",
+            "expected_memory": "Sathya", "expected_tool": "recall",
+            "expected_answer": "Sathya",
+        },
+        {
+            "id": "n3", "type": "unknown", "question": "Do I know Rust?",
+            "seed": "", "expected_memory": "", "expected_tool": "recall",
+            "expected_answer": "",
+        },
+    ]
+    report = runner.run(items, seed=True)
+    rank = {r["id"]: r for r in report["results"]}
+    assert rank["n1"]["router_says"] == "recall"
+    assert rank["n1"]["router_forced"] is True
+    assert rank["n1"]["grounding_verdict"] == "SUPPORTED"
+    assert rank["n1"]["grounded"] is True
+    assert rank["n3"]["grounding_verdict"] == "SUPPORTED"  # correct abstention
+    assert report["metrics"]["grounding_accuracy"] == 1.0
+    assert report["metrics"]["router_forced_rate"] == 1.0

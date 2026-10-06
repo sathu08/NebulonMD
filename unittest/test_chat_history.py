@@ -121,3 +121,51 @@ def test_history_store_for_unknown_user_is_lenient():
     assert record["id"] == "g1"
     # same provider + name resolves to the same store (upsert, not duplicate)
     assert history_store_for(provider, "ghost_user").list() == [record]
+
+
+def test_exact_duplicate_messages_combine_into_one():
+    from nmd_host.stores.chat_history_store import (
+        InMemoryChatHistoryStore,
+        _dedupe_messages,
+        _message_key,
+    )
+
+    assert _dedupe_messages([
+        {"role": "user", "content": "hi"},
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {"role": "user", "content": "hi"},
+    ]) == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    # key is chat-scoped: same text in another chat is a different message.
+    assert _message_key("c1", "user", "hi") == _message_key("c1", "user", "hi")
+    assert _message_key("c1", "user", "hi") != _message_key("c2", "user", "hi")
+    assert _message_key("c1", "user", "hi") != _message_key("c1", "assistant", "hi")
+
+    store = InMemoryChatHistoryStore("u")
+    store.save({"id": "c", "messages": [
+        {"role": "user", "content": "hi"},
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "yo"},
+    ]})
+    assert [m["content"] for m in store.get("c")["messages"]] == ["hi", "yo"]
+
+
+def test_resave_grows_transcript_without_duplicates():
+    from nmd_host.stores.chat_history_store import InMemoryChatHistoryStore
+
+    store = InMemoryChatHistoryStore("u")
+    store.save({"id": "c", "messages": [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]})
+    store.save({"id": "c", "messages": [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {"role": "user", "content": "bye"},
+    ]})
+    assert [m["content"] for m in store.get("c")["messages"]] == [
+        "hi", "hello", "bye",
+    ]

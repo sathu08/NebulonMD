@@ -30,6 +30,7 @@ from nmd_host.utils.constants import MAX_TURN_RESULT_CHARS
 
 from .config import AgentConfig
 from .prompt import build_system_prompt
+from .router import route_question
 from .schemas import (
     AgentChatData,
     AgentMessage,
@@ -137,11 +138,59 @@ class AgentRuntime:
         model_name = getattr(self._llm, "model", None) or ""
         started = time.monotonic()
         fallback_used = False
+        # Step 6.14 — deterministic intent router (eval suggestion #1):
+        # memory questions run ``recall`` BEFORE the first LLM turn, so tool
+        # selection no longer depends on model variance ("What is my name?"
+        # → recall, even if the model would have answered from nothing).
+        # Only ``recall`` is ever forced — never ``remember`` — so questions
+        # are never auto-stored as memories.
+        routed_intent = (
+            route_question(user_text) if self._config.router_enabled else "none"
+        )
+        if routed_intent == "recall" and "recall" in self._tools:
+            forced_started = time.monotonic()
+            try:
+                forced_detail = self._tools["recall"].run({"query": user_text})
+            except Exception as exc:  # defensive: router must not break chat
+                logger.warning("forced recall failed: %s", exc)
+                forced_detail = f"error: tool recall failed ({type(exc).__name__})"
+            forced_ms = (time.monotonic() - forced_started) * 1000.0
+            forced_ok = not forced_detail.startswith("error")
+            trace.tools.append(
+                ToolSpan(
+                    tool="recall",
+                    ok=forced_ok,
+                    latency_ms=forced_ms,
+                    detail=forced_detail[:200],
+                )
+            )
+            trace.recall = RecallSpan(
+                query=user_text, latency_ms=forced_ms,
+            )
+            tool_results.append(
+                AgentToolResult(tool="recall", ok=forced_ok, detail=forced_detail)
+            )
+            loop.append(
+                AgentMessage(role="tool", content=forced_detail[:MAX_TURN_RESULT_CHARS])
+            )
+        # Suggestion #4 — short-answer path: routed memory questions get a
+        # 1-2 sentence instruction so "What is my name?" costs one grounded
+        # turn instead of thousands of reasoning tokens.
+        effective_text = user_text
+        if routed_intent == "recall" and self._config.concise_memory_answers:
+            effective_text = (
+                f"{user_text}\n"
+                "(Answer in 1-2 sentences using only the recalled memories "
+                "above. Answer only what the memories directly state — do "
+                "not infer preferences, favorites, or unstated facts from "
+                "usage. If they do not contain the answer, say you do not "
+                "have it stored.)"
+            )
         for _ in range(self._config.max_turns):
             prompt = "\n".join(
                 [
                     *(f"{m.role}: {m.content}" for m in [*prior, *loop]),
-                    f"User: {user_text}",
+                    f"User: {effective_text}",
                 ]
             )
             llm_started = time.monotonic()
@@ -153,11 +202,23 @@ class AgentRuntime:
             llm_ms = (time.monotonic() - llm_started) * 1000.0
             text = reply.text if hasattr(reply, "text") else reply
             text = _unwrap_answer(text)
+            try:
+                rin = int(getattr(reply, "tokens_in", 0) or 0)
+                rout = int(getattr(reply, "tokens_out", 0) or 0)
+                rest = bool(getattr(reply, "estimated", True))
+            except Exception:
+                from ..intelligence.providers import estimate_tokens as _est
+                rin, rout, rest = _est(prompt), _est(str(text)), True
+            if not rin and not rout:
+                from ..intelligence.providers import estimate_tokens as _est
+                rin, rout, rest = _est(prompt), _est(str(text)), True
             trace.llm = LLMSpan(
                 model=model_name,
                 latency_ms=trace.llm.latency_ms + llm_ms,
-                tokens=trace.llm.tokens
-                + len(prompt.split()) + len(str(text).split()),
+                tokens=trace.llm.tokens + rin + rout,
+                tokens_in=trace.llm.tokens_in + rin,
+                tokens_out=trace.llm.tokens_out + rout,
+                estimated=trace.llm.estimated and rest,
             )
             call = _parse_tool_call(text)
             if call is None or call.tool not in self._tools:

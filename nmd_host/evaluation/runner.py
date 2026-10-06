@@ -21,7 +21,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .grounding import SUPPORTED, _DECLINE_MARKERS, grounding_verdict
 from .metrics import summarize
+from nmd_host.agent.router import route_question
 from nmd_host.core.config import _nmd_home
 from nmd_host.agent import AgentConfig, AgentRuntime, build_memory_toolkit
 
@@ -42,29 +44,22 @@ REPO_ROOT = _nmd_home()
 DATASET_PATH = REPO_ROOT / "unittest" / "evaluation" / "dataset.json"
 REPORTS_DIR = REPO_ROOT / "evaluation_reports"
 
-_DECLINE_MARKERS = (
-    "don't know",
-    "dont know",
-    "do not know",
-    "no memory",
-    "no memories",
-    "not have",
-    "insufficient",
-    "no information",
-    "cannot",
-    "can't say",
-    "can't confirm",
-    "cannot confirm",
-    "not sure",
-    "no way to know",
-    "no data",
-    "haven't",
-    "no record",
-)
+# NOTE: decline/grounding language lives in ONE place (``.grounding``);
+# ``_DECLINE_MARKERS`` is re-exported here for backward-compat imports.
 
 
 def _normalize(text: Any) -> str:
-    return " ".join(str(text or "").lower().split())
+    # Normalize unicode apostrophes/quotes so Qwen/GPT outputs with
+    # U+2019 (’) match straight-quote markers like "don't".
+    cleaned = (
+        str(text or "")
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("“", '"')
+        .replace("”", '"')
+        .lower()
+    )
+    return " ".join(cleaned.split())
 
 
 def _answer_ok(expected: str, answer: str) -> bool:
@@ -205,10 +200,22 @@ class EvaluationRunner:
             "answer": "",
             "answer_ok": False,
             "declines_answer": False,
+            # Step 13.1 — separated axes (eval suggestion #5): router intent,
+            # whether recall actually ran on a routed question, and the
+            # grounding verdict (suggestions #2 + #3).
+            "router_says": "",
+            "router_forced": False,
+            "grounding_verdict": "UNKNOWN",
+            "grounded": False,
             "latency_ms": 0.0,
             "tokens": 0,
             "error": None,
         }
+        retrieved_texts: list = []
+        # Router intent is pure (no LLM) — record it even if retrieval or
+        # the agent errors, so the router axis stays measurable on infra
+        # failures (verdict then stays UNKNOWN, excluded from rates).
+        result["router_says"] = route_question(question)
 
         # Retrieval accuracy measured independently of the agent.
         if expected_tool == "recall":
@@ -219,6 +226,9 @@ class EvaluationRunner:
                 result["retrieval_ok"] = self._memory_hit(
                     expected_memory or expected_answer, memories
                 )
+                retrieved_texts = [
+                    str(getattr(m.content, "text", "") or "") for m in memories
+                ]
             except Exception as exc:  # defensive: never fail the whole run
                 result["retrieval_ok"] = False
                 result["error"] = f"retrieval: {type(exc).__name__}: {exc}"
@@ -248,6 +258,21 @@ class EvaluationRunner:
                 else None
             )
             result["declines_answer"] = _declines(data.answer)
+            # What actually ran vs. router intent (suggestion #1; intent
+            # was recorded before the try so it survives LLM errors), plus
+            # the grounding verdict over independently retrieved memories
+            # (suggestions #2 + #3).
+            result["router_forced"] = (
+                result["router_says"] == "recall"
+                and "recall" in result["actual_tools"]
+            )
+            result["grounding_verdict"] = grounding_verdict(
+                data.answer,
+                retrieved_texts,
+                expected_memory or expected_answer,
+                str(item.get("type", "known")),
+            )
+            result["grounded"] = result["grounding_verdict"] == SUPPORTED
         except Exception as exc:  # defensive: one bad item must not kill the run
             result["error"] = f"agent: {type(exc).__name__}: {exc}"
             result["latency_ms"] = round(
@@ -281,6 +306,7 @@ __all__ = [
     "DATASET_PATH",
     "EvaluationRunner",
     "REPORTS_DIR",
+    "_DECLINE_MARKERS",
     "load_dataset",
     "save_report",
 ]

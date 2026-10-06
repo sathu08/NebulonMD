@@ -269,6 +269,8 @@ SETTINGS_GROUPS: list = [
             {"key": "nmd_agent_session_ttl_seconds", "type": "int", "label": "Session TTL (s)"},
             {"key": "nmd_agent_durable_sessions", "type": "bool", "label": "Durable sessions"},
             {"key": "nmd_agent_system_prompt", "type": "str", "label": "System prompt"},
+            {"key": "nmd_agent_router", "type": "bool", "label": "Intent router (force recall)"},
+            {"key": "nmd_agent_concise_answers", "type": "bool", "label": "Concise memory answers"},
         ],
     },
     {
@@ -710,6 +712,12 @@ class NMDConfig:
         )
         self.NMD_AGENT_SYSTEM_PROMPT = self._config.get(
             "agent", "NMD_AGENT_SYSTEM_PROMPT", fallback=""
+        )
+        self.NMD_AGENT_ROUTER = self._getbool(
+            "agent", "NMD_AGENT_ROUTER", True
+        )
+        self.NMD_AGENT_CONCISE_ANSWERS = self._getbool(
+            "agent", "NMD_AGENT_CONCISE_ANSWERS", True
         )
 
     def _load_background(self):

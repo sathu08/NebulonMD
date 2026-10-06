@@ -55,6 +55,15 @@ class AgentToolResult(BaseModel):
     detail: str
 
 
+class Usage(BaseModel):
+    """LLM token usage for one chat run (native when exposed, else chars//4)."""
+
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_total: int = 0
+    estimated: bool = True
+
+
 class AgentChatData(BaseModel):
     """Response payload: the final answer plus loop transparency."""
 
@@ -78,6 +87,10 @@ class AgentChatData(BaseModel):
             "mode; omitted when observability is disabled."
         ),
     )
+    usage: Optional[Usage] = Field(
+        default=None,
+        description="Summed LLM tokens for this run (mirrors trace.llm).",
+    )
 
 
 __all__ = [
@@ -87,4 +100,5 @@ __all__ = [
     "AgentToolCall",
     "AgentToolResult",
     "ExecutionTrace",
+    "Usage",
 ]
