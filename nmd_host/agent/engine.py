@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Dict, List, Optional
 
@@ -69,6 +70,55 @@ def _unwrap_answer(raw: str) -> str:
     if isinstance(answer, str) and answer.strip():
         return answer.strip()
     return raw
+
+
+_THINK_BLOCK_RE = re.compile(
+    r"<(think|thinking|reasoning|thought|analysis|scratchpad)\b[^>]*>"
+    r".*?(</\1\s*>|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_THINKING_HEADER_RE = re.compile(
+    r"^\s*(here'?s a |here is a |##\s*)?"
+    r"(thinking process|thought process|reasoning process|"
+    r"internal (thoughts|reasoning)|chain of thought)\s*:?.*$",
+    re.IGNORECASE,
+)
+
+_ANALYSIS_LINE_RE = re.compile(
+    r"^\s*(#{1,4}\s+|\d+[.)]\s+[-*]?\s*|[-*]\s+|\*\*.+\*\*\s*:?\s*)$"
+)
+
+
+def _strip_reasoning(raw: str) -> str:
+    """Remove model reasoning traces from a reply (eval suggestion: the
+    Nemotron thinking-process leak).
+
+    Reasoning-distilled open models think out loud two ways: ``<think>``
+    tag blocks, or a prose preamble (``Here's a thinking process:`` +
+    numbered self-analysis). Both leak into chat when the runtime treats
+    a non-JSON reply as the final answer. Stripping runs *before* tool
+    parsing so tags around a tool-call JSON cannot break it either.
+
+    Conservative by design: the prose preamble is only cut when it is the
+    very first line, and only header/blank/pure-analysis lines go — content
+    lines are never removed, so a reply that is entirely analysis keeps its
+    substance (minus the announcement).
+    """
+    text = str(raw or "")
+    if not text.strip():
+        return text
+    text = _THINK_BLOCK_RE.sub("", text).strip()
+    if not text:
+        return ""
+    lines = text.splitlines()
+    if not _THINKING_HEADER_RE.match(lines[0]):
+        return text
+    tail = list(lines[1:])
+    while tail and (not tail[0].strip() or _ANALYSIS_LINE_RE.match(tail[0])):
+        tail.pop(0)
+    cleaned = "\n".join(tail).strip()
+    return cleaned if cleaned else text.strip()
 
 
 def _parse_tool_call(raw: str) -> Optional[AgentToolCall]:
@@ -183,8 +233,19 @@ class AgentRuntime:
                 "(Answer in 1-2 sentences using only the recalled memories "
                 "above. Answer only what the memories directly state — do "
                 "not infer preferences, favorites, or unstated facts from "
-                "usage. If they do not contain the answer, say you do not "
-                "have it stored.)"
+                "usage. Never show your thinking process or reasoning; reply "
+                "with the final answer only. If they do not contain the "
+                "answer, say you do not have it stored.)"
+            )
+        elif routed_intent == "none" and self._config.router_enabled:
+            # General question (no stored memory needed): answer freely from
+            # the model's own knowledge like any AI assistant — do not
+            # decline for lack of memories and do not mention storage.
+            effective_text = (
+                f"{user_text}\n"
+                "(This needs no stored memory. Answer directly from your own "
+                "knowledge in a few sentences. Do not mention memories, "
+                "storage, or recall.)"
             )
         for _ in range(self._config.max_turns):
             prompt = "\n".join(
@@ -201,6 +262,7 @@ class AgentRuntime:
             )
             llm_ms = (time.monotonic() - llm_started) * 1000.0
             text = reply.text if hasattr(reply, "text") else reply
+            text = _strip_reasoning(text)
             text = _unwrap_answer(text)
             try:
                 rin = int(getattr(reply, "tokens_in", 0) or 0)
