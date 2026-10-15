@@ -1,21 +1,19 @@
 """ChatHistoryStore — COSMOS corpus ``mind_chats`` via the NebulonDB API.
 
-One **record per message**: every user/assistant message is its own JSON
-document ``{kind: "message", mid, chat_id, role, content, idx}`` plus one
-header document per chat ``{kind: "chat", id, user, title, createdAt,
-updatedAt, message_count}``. The segment is ``user_{user_id}``
-(multi-tenant isolation).
+One **record per save**: every save writes a single self-contained JSON
+document ``{kind: "chat", id, user, title, createdAt, updatedAt, savedAt,
+savedBy, message_count, messages: [{mid, role, content, idx, savedAt,
+savedBy}]}``. The segment is ``user_{user_id}`` (multi-tenant isolation).
 
-Combining rule (exact duplicates only): the message key is
-``sha256(chat_id + role + content)`` — identical texts share one record,
-first occurrence wins, order preserved. Re-saving a transcript reconciles
-(diff): only genuinely new messages are inserted, removed ones deleted,
-unchanged ones untouched — so 11 auto-saves of a growing chat cost ~11
-message writes, not 11 full-transcript rewrites.
+Combining rule (exact duplicates only): messages with the same role + text
+are stored once (first occurrence wins, order preserved). Re-saving is
+append-only: each save adds a fresh stamped document (``savedAt``/``savedBy``
+= who saved, when) and nothing is ever deleted here — past saves stay in
+history as-is. ``delete()`` (explicit per-chat delete API) is the only path
+that removes rows. Listing shows the newest document per chat id.
 
-Legacy full-transcript docs (``{id, ..., messages[]}`` with no ``kind``)
-are read-compatible and superseded (deleted) on the next save of that
-chat.
+Old split rows (``kind: "message"`` parts) and legacy full-transcript docs
+(``{id, ..., messages[]}`` with no ``kind``) remain read-compatible.
 
 History is COSMOS-only by design: transcripts are exact-fetched for the
 console (``/chats``), never embedded, so raw chit-chat can never pollute
@@ -112,7 +110,25 @@ def _split_records(
                 **doc, "_rid": record.get("_id", record.get("id")),
             }
         elif kind == "chat" and doc.get("id"):
-            headers[str(doc["id"])] = {**doc, "_rid": record.get("_id", record.get("id"))}
+            # Append-only history can hold several headers per chat id (one
+            # per save). Keep the newest (by updatedAt, then savedAt) for display.
+            prev = headers.get(str(doc["id"]))
+            cand = {**doc, "_rid": record.get("_id", record.get("id"))}
+            if prev is None:
+                headers[str(doc["id"])] = cand
+            else:
+                def _ts(d: Dict[str, Any]) -> tuple:
+                    try:
+                        u = int(d.get("updatedAt") or 0)
+                    except Exception:
+                        u = 0
+                    try:
+                        s = int(d.get("savedAt") or 0)
+                    except Exception:
+                        s = 0
+                    return (u, s)
+                if _ts(cand) >= _ts(prev):
+                    headers[str(doc["id"])] = cand
         elif isinstance(doc.get("messages"), list) and doc.get("id"):
             legacy.setdefault(str(doc["id"]), []).append(record)
     return headers, messages, legacy
@@ -194,6 +210,8 @@ class ChatHistoryStore:
                     "title": str(header.get("title") or "Untitled chat"),
                     "createdAt": int(header.get("createdAt") or 0),
                     "updatedAt": int(header.get("updatedAt") or 0),
+                    "savedAt": int(header.get("savedAt") or header.get("updatedAt") or 0),
+                    "savedBy": str(header.get("savedBy") or header.get("user") or self._username),
                     "messages": msgs,
                 }
             )
@@ -223,62 +241,47 @@ class ChatHistoryStore:
         incoming = _normalize_chat(self._username, chat, self.get(str(chat.get("id"))))
         cid = incoming["id"]
         deduped = _dedupe_messages(incoming["messages"])
-        wanted = {
-            _message_key(cid, m["role"], m["content"]): m for m in deduped
-        }
 
-        records = self._load_records()
-        headers, messages, legacy = _split_records(records)
-        stored = messages.get(cid, {})
-        old_header = headers.get(cid)
+        # No-op when nothing changed (same title + same turns as newest):
+        # zero writes. History is append-only — every real save adds one
+        # self-contained document, nothing is ever deleted here.
+        current = self.get(cid)
+        if current is not None:
+            cur_turns = [(m.get("role"), m.get("content"))
+                         for m in (current.get("messages") or [])]
+            new_turns = [(m.get("role"), m.get("content")) for m in deduped]
+            if (str(current.get("title") or "") == incoming["title"]
+                    and cur_turns == new_turns):
+                return current
 
-        # No-op when nothing changed (same title + same message set, no
-        # legacy docs left to migrate): zero writes, zero tombstones.
-        if (
-            not legacy.get(cid)
-            and old_header is not None
-            and str(old_header.get("title") or "") == incoming["title"]
-            and set(stored) == set(wanted)
-        ):
-            return self._assemble(headers, messages, legacy, cid)[0]
-
-        # Reconcile: delete superseded legacy docs, removed messages and
-        # the stale header; insert only genuinely new messages + header.
-        for record in legacy.get(cid, []):
-            self._delete_rid(record.get("_id", record.get("id")))
-        for mid, doc in stored.items():
-            if mid not in wanted:
-                self._delete_rid(doc.get("_rid"))
-        if old_header is not None:
-            self._delete_rid(old_header.get("_rid"))
-
-        new_docs: List[Dict[str, Any]] = []
-        for idx, (mid, m) in enumerate(wanted.items()):
-            if mid in stored:
-                continue
-            new_docs.append(
+        # Single-sample write: one document carrying the cover fields plus
+        # the full embedded transcript (each turn stamped who/when).
+        now_ms = int(time.time() * 1000)
+        entries: List[Dict[str, Any]] = []
+        for idx, m in enumerate(deduped):
+            entries.append(
                 {
-                    "kind": "message",
-                    "mid": mid,
-                    "chat_id": cid,
+                    "mid": _message_key(cid, m["role"], m["content"]),
                     "role": m["role"],
                     "content": m["content"],
                     "idx": idx,
+                    "savedAt": now_ms,
+                    "savedBy": self._username,
                 }
             )
-        header_doc = {
+        single_doc = {
             "kind": "chat",
             "id": cid,
             "user": incoming["user"],
             "title": incoming["title"],
             "createdAt": incoming["createdAt"],
             "updatedAt": incoming["updatedAt"],
-            "message_count": len(deduped),
+            "savedAt": now_ms,
+            "savedBy": self._username,
+            "message_count": len(entries),
+            "messages": entries,
         }
-        payload = [
-            {"text": json.dumps(header_doc)},
-            *({"text": json.dumps(d)} for d in new_docs),
-        ]
+        payload = [{"text": json.dumps(single_doc)}]
         self._api.load_segment(
             self.CORPUS,
             self._segment,
@@ -287,9 +290,11 @@ class ChatHistoryStore:
             set_columns=["text"],
             lang_type="en",
             doc_type=self.DOC_TYPE,
-            metadata={"app": "nebulonmind", "message_count": len(deduped)},
+            metadata={"app": "nebulonmind", "message_count": len(entries)},
         )
-        return {**header_doc, "messages": deduped}
+        return {**single_doc,
+                "messages": [{"role": m["role"], "content": m["content"]}
+                             for m in entries]}
 
     def delete(self, chat_id: str) -> bool:
         cid = str(chat_id)
@@ -300,8 +305,14 @@ class ChatHistoryStore:
             removed = self._delete_rid(record.get("_id", record.get("id"))) or removed
         for doc in messages.get(cid, {}).values():
             removed = self._delete_rid(doc.get("_rid")) or removed
-        if cid in headers:
-            removed = self._delete_rid(headers[cid].get("_rid")) or removed
+        # Every saved document for this chat (append-only history can hold
+        # several per id — newest-wins display keeps only one in `headers`).
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            doc = _parse_record(record)
+            if isinstance(doc, dict) and doc.get("kind") == "chat" and str(doc.get("id")) == cid:
+                removed = self._delete_rid(record.get("_id", record.get("id"))) or removed
         return removed
 
 
